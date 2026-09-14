@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Icone } from '../../components/Icone';
 import { exigirSupabase } from '../../lib/supabase';
 
 /** Login do organizador (sistema monousuário — P-03) */
 export function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState<string | null>(null);
@@ -21,7 +22,8 @@ export function Login() {
         password: senha,
       });
       if (error) throw error;
-      navigate('/');
+      const retornarPara = (location.state as { retornarPara?: string } | null)?.retornarPara;
+      navigate(retornarPara?.startsWith('/') ? retornarPara : '/', { replace: true });
     } catch (err) {
       setErro(err instanceof Error ? err.message : 'Falha no login');
     } finally {

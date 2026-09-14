@@ -6,7 +6,7 @@
  * Usa o MESMO motor do app (app/src/lib/sorteio/sorteio.ts).
  * Também exporta o CSV para o verificador público.
  */
-import pg from 'pg';
+import { criarClienteBanco } from './_database.mjs';
 import { writeFileSync } from 'node:fs';
 import { sortear } from '../app/src/lib/sorteio/sorteio.ts';
 
@@ -16,11 +16,7 @@ if (!sorteioId || !semente) {
   process.exit(1);
 }
 
-const db = new pg.Client({
-  host: 'aws-0-sa-east-1.pooler.supabase.com', port: 5432,
-  user: 'postgres.uakwbtmbhwifiekwmsbq', database: 'postgres',
-  password: 'CavaloMarinho123!', ssl: { rejectUnauthorized: false },
-});
+const db = criarClienteBanco();
 await db.connect();
 
 const { rows: [sorteio] } = await db.query('select * from sorteio where id = $1', [sorteioId]);
@@ -32,9 +28,6 @@ if (jaTem) {
   console.error('❌ E-18: este sorteio já foi executado. Crie uma nova rodada para o mesmo post.');
   process.exit(1);
 }
-
-// congela o snapshot (RNF-06)
-await db.query(`update sorteio set status = 'ENCERRADO', encerrado_em = now() where id = $1`, [sorteioId]);
 
 const { rows: chancesDb } = await db.query(
   `select c.ordem, c.autor_username, cm.ig_comment_id
@@ -62,16 +55,41 @@ try {
   process.exit(1);
 }
 
-await db.query(
-  `insert into resultado (sorteio_id, seed_publica, seed_fonte, hash_lista,
-     total_comentarios, total_habilitados, total_chances, vencedores, suplentes)
-   values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-  [sorteioId, semente, fonte, r.hash_lista, contagens.total_comentarios,
-   contagens.total_habilitados, r.total_chances,
-   JSON.stringify(r.vencedores), JSON.stringify(r.suplentes)]
-);
-await db.query(`update sorteio set status = 'SORTEADO', seed_publica = $2, seed_fonte = $3, hash_lista = $4 where id = $1`,
-  [sorteioId, semente, fonte, r.hash_lista]);
+// Congela o snapshot, grava o resultado e conclui em uma única transação.
+// O lock e a segunda checagem impedem duas execuções concorrentes.
+await db.query('begin');
+try {
+  await db.query('select id from sorteio where id = $1 for update', [sorteioId]);
+  const { rows: [resultadoConcorrente] } = await db.query(
+    'select id from resultado where sorteio_id = $1',
+    [sorteioId],
+  );
+  if (resultadoConcorrente) throw new Error('E-18: este sorteio foi executado por outra sessão.');
+
+  await db.query(
+    `update sorteio set status = 'ENCERRADO', encerrado_em = now() where id = $1`,
+    [sorteioId],
+  );
+  await db.query(
+    `insert into resultado (sorteio_id, seed_publica, seed_fonte, hash_lista,
+       total_comentarios, total_habilitados, total_chances, vencedores, suplentes)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+    [sorteioId, semente, fonte, r.hash_lista, contagens.total_comentarios,
+     contagens.total_habilitados, r.total_chances,
+     JSON.stringify(r.vencedores), JSON.stringify(r.suplentes)],
+  );
+  await db.query(
+    `update sorteio set status = 'SORTEADO', seed_publica = $2, seed_fonte = $3, hash_lista = $4
+      where id = $1`,
+    [sorteioId, semente, fonte, r.hash_lista],
+  );
+  await db.query('commit');
+} catch (erro) {
+  await db.query('rollback');
+  await db.end();
+  console.error(`❌ Sorteio não concluído; todas as alterações foram desfeitas. ${erro.message}`);
+  process.exit(1);
+}
 
 // CSV para o verificador público (AC-15)
 const csv = 'ordem,autor_username,ig_comment_id\n' +

@@ -19,6 +19,17 @@ const ROTA_POR_STATUS: Record<string, string> = {
   SORTEADO: 'live',
 };
 
+async function buscarItensHistorico(): Promise<ItemHistorico[]> {
+  const lista = await listarSorteios();
+  return Promise.all(
+    lista.map(async (s) => {
+      if (s.status !== 'SORTEADO') return s;
+      const resultado = await buscarResultado(s.id).catch(() => null);
+      return { ...s, vencedor: resultado?.vencedores?.[0]?.autor_username ?? null };
+    })
+  );
+}
+
 export function Historico() {
   const navigate = useNavigate();
   const [itens, setItens] = useState<ItemHistorico[] | null>(null);
@@ -29,22 +40,25 @@ export function Historico() {
 
   async function carregar() {
     try {
-      const lista = await listarSorteios();
-      const comVencedor = await Promise.all(
-        lista.map(async (s) => {
-          if (s.status !== 'SORTEADO') return s;
-          const r = await buscarResultado(s.id).catch(() => null);
-          return { ...s, vencedor: r?.vencedores?.[0]?.autor_username ?? null };
-        })
-      );
-      setItens(comVencedor);
+      setItens(await buscarItensHistorico());
+      setErro(null);
     } catch (e) {
       setErro(mensagemDeErro(e));
     }
   }
 
   useEffect(() => {
-    carregar();
+    let ativo = true;
+    buscarItensHistorico()
+      .then((lista) => {
+        if (ativo) setItens(lista);
+      })
+      .catch((e) => {
+        if (ativo) setErro(mensagemDeErro(e));
+      });
+    return () => {
+      ativo = false;
+    };
   }, []);
 
   async function apagarUm(s: SorteioResumo) {

@@ -4,8 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "npm run test:database && npm --prefix app test",
-    "test:database": "node scripts/test-marketing-migration.mjs"
+    "test": "npm run test:security && npm run test:database && npm --prefix app test",
+    "test:security": "node scripts/test-secrets.mjs",
+    "test:database": "node scripts/test-marketing-migration.mjs",
+    "check": "npm test && npm --prefix app run lint && npm --prefix app run build"
   },
   "keywords": [],
   "author": "",

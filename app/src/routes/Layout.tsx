@@ -84,7 +84,7 @@ export function Layout() {
         </Link>
 
         <div className="sx-top-right">
-          {conta && (
+          {conta && !emMarketing && (
             <span
               className={`sx-tag sx-tag--${statusToken === 'ok' ? 'ok' : statusToken === 'warn' ? 'warn' : 'out'}`}
             >
@@ -105,10 +105,12 @@ export function Layout() {
           {SORTEIOS.map(renderItem)}
           <span className="sx-rail-label">Marketing</span>
           {MARKETING.map(renderItem)}
-          <div className="sx-rail-grupo--secundario">
-            <span className="sx-rail-label">Geral</span>
-            {GERAL.map(renderItem)}
-          </div>
+          {!emMarketing && (
+            <div className="sx-rail-grupo--secundario">
+              <span className="sx-rail-label">Geral</span>
+              {GERAL.map(renderItem)}
+            </div>
+          )}
         </nav>
 
         <main className="sx-main" ref={main}>

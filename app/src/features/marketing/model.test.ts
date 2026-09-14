@@ -39,4 +39,21 @@ describe('briefing de Marketing', () => {
   it('limita o título a 180 caracteres', () => {
     expect(validarBriefing({ ...completo, titulo: 'a'.repeat(181) }, false).titulo).toBeDefined();
   });
+
+  it('antecipa no formulário os limites definidos pelo banco', () => {
+    const erros = validarBriefing({
+      ...completo,
+      objetivo: 'a'.repeat(4001),
+      publico: 'a'.repeat(1001),
+      pilar: 'a'.repeat(121),
+      hipotese: 'a'.repeat(4001),
+    }, false);
+
+    expect(erros).toMatchObject({
+      objetivo: expect.any(String),
+      publico: expect.any(String),
+      pilar: expect.any(String),
+      hipotese: expect.any(String),
+    });
+  });
 });

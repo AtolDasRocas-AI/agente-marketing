@@ -1,14 +1,20 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import {
-  FORMATOS, estadoAoSalvar, type DadosBriefing, validarBriefing,
+  FORMATOS, type DadosBriefing, validarBriefing,
 } from './model';
-import { repositorioLocalMarketing } from './repository';
+import {
+  ErroMarketingRemoto, obterRepositorioMarketingRemoto,
+} from './repositoryRemote';
 
 const INICIAL: DadosBriefing = {
   titulo: '', objetivo: '', publico: '', pilar: '', formato: 'CARROSSEL',
   data_planejada: '', hipotese: '',
 };
+
+function novaChaveIdempotencia(): string {
+  return crypto.randomUUID();
+}
 
 function dadosDoItem(item: DadosBriefing): DadosBriefing {
   return {
@@ -25,26 +31,39 @@ function dadosDoItem(item: DadosBriefing): DadosBriefing {
 export function NovoBriefingMarketing() {
   const navigate = useNavigate();
   const { id } = useParams();
-  const [inicializacao] = useState<{
-    dados: DadosBriefing;
-    naoEncontrado?: boolean;
-    erro?: string;
-  }>(() => {
-    if (!id) return { dados: INICIAL };
-    try {
-      const item = repositorioLocalMarketing.buscar(id);
-      return item ? { dados: dadosDoItem(item) } : { dados: INICIAL, naoEncontrado: true };
-    } catch (erro) {
-      return {
-        dados: INICIAL,
-        erro: erro instanceof Error ? erro.message : 'Não foi possível abrir este briefing.',
-      };
-    }
-  });
-  const [dados, setDados] = useState<DadosBriefing>(inicializacao.dados);
+  const [dados, setDados] = useState<DadosBriefing>(INICIAL);
   const [erros, setErros] = useState<Partial<Record<keyof DadosBriefing, string>>>({});
-  const [erroGeral, setErroGeral] = useState(inicializacao.erro ?? '');
+  const [erroGeral, setErroGeral] = useState('');
+  const [versao, setVersao] = useState<number | null>(null);
+  const [carregando, setCarregando] = useState(true);
+  const [salvando, setSalvando] = useState(false);
+  const [naoEncontrado, setNaoEncontrado] = useState(false);
+  const [semSessao, setSemSessao] = useState(false);
+  const salvamentoEmCurso = useRef(false);
+  const chaveCriacao = useRef(id ? null : novaChaveIdempotencia());
   const emEdicao = Boolean(id);
+
+  useEffect(() => {
+    let ativo = true;
+    const repositorio = obterRepositorioMarketingRemoto();
+    const carregar = id ? repositorio.buscar(id) : repositorio.preparar().then(() => null);
+    carregar
+      .then((item) => {
+        if (!ativo) return;
+        if (id && !item) setNaoEncontrado(true);
+        if (item) {
+          setDados(dadosDoItem(item));
+          setVersao(item.versao);
+        }
+      })
+      .catch((erro: unknown) => {
+        if (!ativo) return;
+        setSemSessao(erro instanceof ErroMarketingRemoto && erro.codigo === 'NAO_AUTENTICADO');
+        setErroGeral(erro instanceof Error ? erro.message : 'Não foi possível abrir este briefing.');
+      })
+      .finally(() => { if (ativo) setCarregando(false); });
+    return () => { ativo = false; };
+  }, [id]);
 
   function atualizar<K extends keyof DadosBriefing>(campo: K, valor: DadosBriefing[K]) {
     setDados((atual) => ({ ...atual, [campo]: valor }));
@@ -52,7 +71,8 @@ export function NovoBriefingMarketing() {
     setErroGeral('');
   }
 
-  function salvar(completo: boolean) {
+  async function salvar(completo: boolean) {
+    if (salvamentoEmCurso.current) return;
     const validacao = validarBriefing(dados, completo);
     setErros(validacao);
     if (Object.keys(validacao).length) {
@@ -61,24 +81,35 @@ export function NovoBriefingMarketing() {
       return;
     }
 
+    salvamentoEmCurso.current = true;
+    setSalvando(true);
     try {
-      const status = estadoAoSalvar(dados, completo);
-      if (id) repositorioLocalMarketing.atualizar(id, dados, status);
-      else repositorioLocalMarketing.criar(dados, status);
+      const repositorio = obterRepositorioMarketingRemoto();
+      if (id) {
+        if (versao === null) throw new Error('A versão deste briefing ainda não foi carregada.');
+        const atualizado = await repositorio.atualizar(id, versao, dados, completo);
+        setVersao(atualizado.versao);
+      } else {
+        if (!chaveCriacao.current) chaveCriacao.current = novaChaveIdempotencia();
+        await repositorio.criar(dados, completo, chaveCriacao.current);
+      }
       navigate('/marketing/agenda', {
         state: { aviso: id ? 'Briefing atualizado com sucesso.' : 'Briefing salvo com sucesso.' },
       });
     } catch (erro) {
       setErroGeral(erro instanceof Error ? erro.message : 'Não foi possível salvar o briefing.');
+    } finally {
+      salvamentoEmCurso.current = false;
+      setSalvando(false);
     }
   }
 
   function salvarRascunho(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();
-    salvar(false);
+    void salvar(false);
   }
 
-  if (inicializacao.naoEncontrado) {
+  if (naoEncontrado) {
     return (
       <Navigate
         to="/marketing/agenda"
@@ -86,6 +117,10 @@ export function NovoBriefingMarketing() {
         state={{ aviso: 'O briefing solicitado não foi encontrado. A agenda foi mantida sem alterações.' }}
       />
     );
+  }
+
+  if (carregando) {
+    return <div className="sx-wrap--narrow"><div className="sx-empty sx-card" role="status">Carregando briefing…</div></div>;
   }
 
   return (
@@ -102,6 +137,11 @@ export function NovoBriefingMarketing() {
 
       <form className="sx-card sx-card--pad sm-form" onSubmit={salvarRascunho}>
         {erroGeral && <div className="sx-note sx-note--warn" role="alert">{erroGeral}</div>}
+        {semSessao && (
+          <div className="sx-note sx-note--warn">
+            <Link to="/login">Entre na sua conta</Link> para criar ou editar briefings.
+          </div>
+        )}
 
         <div className="sx-field">
           <label htmlFor="titulo">Título de trabalho</label>
@@ -162,13 +202,16 @@ export function NovoBriefingMarketing() {
         </div>
 
         <div className="sx-note">
-          <span>O assistente de conteúdo será o próximo corte. Nenhuma chamada de IA ou publicação acontece nesta tela.</span>
+          <span>Este briefing será salvo no workspace protegido. Nenhuma chamada de IA ou publicação acontece nesta tela.</span>
         </div>
 
         <div className="sx-actions">
-          <button className="sx-btn" type="submit">{emEdicao ? 'Salvar alterações' : 'Salvar rascunho'}</button>
-          <button className="sx-btn sx-btn--primary" type="button" onClick={() => salvar(true)}>
-            Preparar estratégia
+          <button className="sx-btn" type="submit" disabled={salvando || semSessao}>
+            {salvando ? 'Salvando…' : emEdicao ? 'Salvar alterações' : 'Salvar rascunho'}
+          </button>
+          <button className="sx-btn sx-btn--primary" type="button" disabled={salvando || semSessao}
+            onClick={() => void salvar(true)}>
+            {salvando ? 'Salvando…' : 'Preparar estratégia'}
           </button>
           <Link to="/marketing/agenda" className="sx-btn sx-btn--ghost">Cancelar</Link>
         </div>

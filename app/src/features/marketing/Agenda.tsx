@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Icone } from '../../components/Icone';
 import { ROTULOS_ESTADO, resumoDoStatus, type ConteudoMarketing } from './model';
+import {
+  ErroMarketingRemoto, obterRepositorioMarketingRemoto, type WorkspaceMarketing,
+} from './repositoryRemote';
 import { repositorioLocalMarketing } from './repository';
 
 function rotuloData(data: string) {
@@ -15,17 +18,41 @@ export function AgendaMarketing() {
   const location = useLocation();
   const navigate = useNavigate();
   const [aviso] = useState(() => (location.state as { aviso?: string } | null)?.aviso);
-  const [agenda] = useState<{ itens: ConteudoMarketing[]; erro?: string }>(() => {
+  const [rascunhosLocais] = useState(() => {
     try {
-      return { itens: repositorioLocalMarketing.listar() };
-    } catch (erro) {
-      return {
-        itens: [],
-        erro: erro instanceof Error ? erro.message : 'Não foi possível carregar a agenda.',
-      };
+      return repositorioLocalMarketing.listar().length;
+    } catch {
+      return 0;
     }
   });
+  const [agenda, setAgenda] = useState<{
+    itens: ConteudoMarketing[];
+    workspace?: WorkspaceMarketing;
+    erro?: string;
+    semSessao?: boolean;
+    carregando: boolean;
+  }>({ itens: [], carregando: true });
   const { itens } = agenda;
+
+  useEffect(() => {
+    let ativo = true;
+    const repositorio = obterRepositorioMarketingRemoto();
+    repositorio.preparar()
+      .then(async (workspace) => ({ workspace, conteudos: await repositorio.listar() }))
+      .then(({ workspace, conteudos }) => {
+        if (ativo) setAgenda({ itens: conteudos, workspace, carregando: false });
+      })
+      .catch((erro: unknown) => {
+        if (!ativo) return;
+        setAgenda({
+          itens: [],
+          carregando: false,
+          semSessao: erro instanceof ErroMarketingRemoto && erro.codigo === 'NAO_AUTENTICADO',
+          erro: erro instanceof Error ? erro.message : 'Não foi possível carregar a agenda.',
+        });
+      });
+    return () => { ativo = false; };
+  }, []);
 
   useEffect(() => {
     if (aviso) navigate(location.pathname, { replace: true, state: null });
@@ -52,13 +79,32 @@ export function AgendaMarketing() {
       <div className="sx-note">
         <Icone nome="info" tamanho={16} />
         <span>
-          Sprint 1 em modo local: estes rascunhos ficam neste navegador até a fundação de dados
-          Marketing ser aplicada e validada.
+          {agenda.workspace
+            ? `Sincronizado com ${agenda.workspace.nome}. As alterações ficam protegidas no banco do ATOL Studio.`
+            : 'Os briefings são sincronizados com o workspace protegido de Marketing.'}
         </span>
       </div>
 
+      {rascunhosLocais > 0 && (
+        <div className="sx-note sx-note--warn" role="status">
+          <Icone nome="info" tamanho={16} />
+          <span>
+            {rascunhosLocais} rascunho{rascunhosLocais === 1 ? '' : 's'} da versão local permanece{rascunhosLocais === 1 ? '' : 'm'}
+            {' '}preservado{rascunhosLocais === 1 ? '' : 's'} neste navegador. Nada foi apagado ou importado automaticamente.
+          </span>
+        </div>
+      )}
+
       {aviso && <div className="sx-note" role="status">{aviso}</div>}
       {agenda.erro && <div className="sx-note sx-note--warn" role="alert">{agenda.erro}</div>}
+
+      {agenda.semSessao && (
+        <div className="sx-card sx-card--pad">
+          <h2 style={{ fontFamily: "'Instrument Serif', serif", fontSize: 22 }}>Entre para abrir o Marketing</h2>
+          <p className="sx-hint">O workspace e os briefings só aparecem para membros autenticados.</p>
+          <Link to="/login" className="sx-btn sx-btn--primary">Entrar</Link>
+        </div>
+      )}
 
       <div className="sx-stats sm-stats">
         <div className="sx-stat sx-stat--hero">
@@ -69,15 +115,13 @@ export function AgendaMarketing() {
           <div className="sx-stat-n">{prontos}</div>
           <div className="sx-stat-l">prontos para estratégia</div>
         </div>
-        <div className="sx-stat">
-          <div className="sx-stat-n">0</div>
-          <div className="sx-stat-l">chamadas de IA</div>
-        </div>
       </div>
 
       <p className="sx-step"><b>Agenda</b> Próximos conteúdos</p>
 
-      {itens.length === 0 ? (
+      {agenda.carregando ? (
+        <div className="sx-empty sx-card" role="status">Carregando agenda…</div>
+      ) : agenda.semSessao ? null : itens.length === 0 ? (
         <div className="sx-empty sx-card">
           <Icone nome="agenda" tamanho={28} />
           <h2 style={{ fontFamily: "'Instrument Serif', serif", fontSize: 22 }}>Comece pelo briefing</h2>

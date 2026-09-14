@@ -24,7 +24,7 @@
  *
  * Ex.: node scripts/pipeline-local.mjs --vencedores 3 --palavra "EU QUERO"
  */
-import pg from 'pg';
+import { criarClienteBanco } from './_database.mjs';
 import { readFileSync } from 'node:fs';
 import { classificar, montarChances } from '../app/src/lib/sorteio/regras.ts';
 
@@ -60,11 +60,7 @@ const shortcodeDe = (url) => {
   return m ? m[1] : null;
 };
 
-const db = new pg.Client({
-  host: 'aws-0-sa-east-1.pooler.supabase.com', port: 5432,
-  user: 'postgres.uakwbtmbhwifiekwmsbq', database: 'postgres',
-  password: 'CavaloMarinho123!', ssl: { rejectUnauthorized: false },
-});
+const db = criarClienteBanco();
 await db.connect();
 console.log('🔌 Conectado ao Postgres\n');
 

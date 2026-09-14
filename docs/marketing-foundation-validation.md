@@ -1,107 +1,86 @@
-# Fundação Marketing — plano de validação da migração 0013
+# Fundação Marketing — validação das migrações 0013 e 0014
 
-## Estado e limite desta etapa
+## Estado atual
 
-A migração `0013_marketing_foundation.sql` foi endurecida apenas no repositório local. Ela não está autorizada para aplicação remota. A primeira camada deste roteiro já é executada em um PostgreSQL descartável em memória, sem reutilizar credenciais ou dados de produção.
+As migrações foram validadas localmente e aplicadas, com autorização, exclusivamente no projeto Supabase **Sorteio** (uakwbtmbhwifiekwmsbq):
 
-## Gates automáticos atuais
+| Migração | Versão remota | Estado |
+| --- | --- | --- |
+| 0013_marketing_foundation | 20260914212813 | Aplicada |
+| 0014_security_and_idempotency | 20260914230357 | Aplicada |
+
+Esses arquivos passam a ser imutáveis. Qualquer alteração posterior deve ser uma nova migração. Nenhum deploy de frontend foi realizado nesta etapa.
+
+## Gate automático
 
 Na raiz do projeto:
 
-```text
-npm test
-```
+    npm run check
 
-Esse comando executa as garantias estáticas, aplica a migração integralmente em uma instância PGlite descartável e roda toda a suíte do frontend. O banco de teste reproduz os papéis `anon`, `authenticated` e `service_role`, incluindo `BYPASSRLS` do papel de serviço, além de uma implementação mínima de `auth.uid()`.
+O comando executa, nesta ordem:
 
-Os testes automatizados confirmam atualmente:
+1. varredura de segredos nos arquivos rastreados;
+2. aplicação de 0013 e 0014 em PostgreSQL descartável (PGlite);
+3. testes do frontend;
+4. lint;
+5. build de produção.
 
-- criação das seis tabelas e ativação de RLS;
+O banco descartável reproduz os papéis anon, authenticated e service_role, incluindo BYPASSRLS, além de uma implementação mínima de auth.uid().
+
+## Garantias automatizadas
+
+- criação das seis tabelas marketing_* e ativação de RLS;
 - bloqueio de acesso anônimo e de sessão sem usuário;
-- criação idempotente de workspace e associação de exatamente um administrador;
-- separação entre permissões de administrador e revisor;
-- isolamento de leitura entre dois workspaces;
-- criação, classificação e edição otimista de briefing;
+- criação idempotente de workspace e de briefing;
+- rejeição quando a mesma chave idempotente é reutilizada com payload diferente;
+- separação entre administrador e revisor;
+- isolamento entre workspaces;
+- classificação e edição otimista de briefing;
 - rejeição de escrita direta pelo cliente autenticado;
 - proteção do último administrador;
-- escrita server-side de execução e custo, com estados, idempotência e valores válidos;
-- estorno obrigatório, único e ligado ao lançamento original;
-- ausência de `UPDATE`/`DELETE` no ledger e na auditoria;
-- FKs compostas impedindo referência cruzada entre workspaces;
-- auditoria automática das mutações exercitadas e limite de metadados;
-- rollback integral quando uma falha é induzida antes do `commit`.
+- auditoria das mutações e ledger append-only;
+- FKs compostas impedindo referências entre workspaces;
+- resultado único por sorteio;
+- bloqueio de exclusão direta de resultado;
+- funções internas não executáveis por anon ou authenticated;
+- RLS fail-closed na tabela legada _migracoes, quando existente;
+- índices para as FKs identificadas pelo advisor;
+- rollback integral quando uma falha é induzida antes do commit.
 
-PGlite executa PostgreSQL real em WebAssembly e é adequado para migrações e testes locais. Ainda assim, ele não substitui o ensaio final em um projeto Supabase descartável, necessário para validar os componentes específicos da plataforma, as migrações anteriores e concorrência entre conexões reais.
+## Verificação remota concluída
 
-Permanecem exclusivos do ensaio Supabase: aplicação encadeada das migrações `0001` a `0013`, confirmação dos proprietários das funções, concorrência real na remoção de administradores e validação ponta a ponta dos claims emitidos pelo Auth/Data API.
+- get_project_url confirmou https://uakwbtmbhwifiekwmsbq.supabase.co.
+- list_migrations confirmou as versões 20260914212813 e 20260914230357.
+- A aplicação de 0014 começa verificando resultados duplicados e aborta integralmente se encontrar conflito.
+- O advisor deixou de apontar FKs sem índice, search_path mutável em bloquear_mutacao e funções internas disponíveis anonimamente.
 
-## Pré-condições para o banco descartável
+Avisos remanescentes não justificam mudança cega:
 
-- Confirmar que o ambiente não contém dados ou credenciais reais.
-- Aplicar as migrações `0001` a `0013` em ordem e em uma base Supabase recém-criada.
-- Usar ao menos três usuários de teste: administrador, revisor e não membro.
-- Criar dois workspaces independentes para os testes de isolamento.
-- Manter logs da aplicação das migrações e das asserções, sem tokens ou dados pessoais.
+- tabelas deliberadamente fail-closed com RLS e nenhuma policy;
+- extensão pg_net no schema público;
+- RPCs SECURITY DEFINER que são a API autenticada intencional do produto;
+- políticas que recalculam funções de autenticação por linha;
+- índices novos ou ainda sem tráfego registrados como não utilizados;
+- proteção contra senhas vazadas desabilitada no Auth.
 
-## Casos P0 de esquema e privilégios
+Os itens de desempenho devem ser medidos com dados reais. A proteção contra senhas vazadas deve ser habilitada no painel antes do go-live. Mudanças em extensões exigem ensaio separado.
 
-1. As seis tabelas `marketing_*` existem com RLS habilitada.
-2. `anon` não possui acesso às tabelas nem às RPCs.
-3. `authenticated` possui somente leitura direta; mutações ocorrem pelas RPCs concedidas.
-4. Todas as funções `SECURITY DEFINER` têm `search_path` vazio e proprietário confiável.
-5. Nenhum objeto `sorteio*`, função Meta, segredo ou política existente é modificado.
-6. Uma falha durante a `0013` desfaz o arquivo inteiro, sem objetos parciais.
+## Limites da validação local
 
-## Casos P0 de workspace e membros
+PGlite executa PostgreSQL real em WebAssembly, mas não substitui o Data API, o Auth e concorrência entre conexões reais do Supabase. Permanecem como gates antes do deploy:
 
-1. Usuário não autenticado não cria workspace.
-2. A mesma `idempotency_key` retorna o mesmo workspace para o mesmo criador.
-3. Uma chave diferente cria outro workspace.
-4. O bootstrap cria exatamente um membro `ADMINISTRADOR`.
-5. Revisor e não membro não adicionam, removem ou promovem membros.
-6. Alteração direta de `marketing_member` falha.
-7. Remoção ou rebaixamento do último administrador falha.
-8. Com dois administradores e duas sessões concorrentes, somente uma remoção/rebaixamento pode concluir se a outra deixaria o workspace sem administrador.
-9. `workspace_id`, `user_id` e `criado_em` de uma associação não podem ser alterados.
+1. smoke test autenticado da agenda no app;
+2. criação e retomada de briefing após recarregar a página;
+3. teste de conflito com duas abas;
+4. teste com administrador, revisor e não membro em dois workspaces;
+5. confirmação de que Sorteios permanece funcional;
+6. rotação da credencial de banco exposta no histórico Git;
+7. backup operacional e plano de rollback por migração corretiva.
 
-## Casos P0 de briefing e isolamento
+## Operação segura
 
-1. Somente título gera `IDEIA`.
-2. Qualquer campo editorial adicional gera `EM_BRIEFING`.
-3. Preparar estratégia exige todos os campos e gera `PRONTO_PARA_ESTRATEGIA`.
-4. Atualização com a versão esperada incrementa `versao` e preserva identidade e criação.
-5. Atualização com versão antiga falha como conflito.
-6. Um briefing em etapa posterior a `PRONTO_PARA_ESTRATEGIA` não volta pelo RPC genérico.
-7. Usuário do workspace A não lê nem altera conteúdo do workspace B.
-8. Alterações de `id`, `workspace_id`, `criado_por` e `criado_em` falham, inclusive com escrita privilegiada.
-
-## Casos P0 de auditoria
-
-1. Criação e atualização de workspace, membros, briefing, execução de IA e ledger geram exatamente um evento por mutação.
-2. O ator é derivado da sessão; operações sem usuário são marcadas como `SISTEMA`.
-3. Cliente autenticado não insere eventos diretamente.
-4. `UPDATE` e `DELETE` de eventos falham inclusive com `service_role`.
-5. Metadados que não sejam objeto ou excedam 32 KiB falham.
-6. Workspace com auditoria não pode ser removido fisicamente.
-
-## Casos P0 de IA e custos
-
-1. `ai_run` do workspace A não referencia conteúdo do workspace B.
-2. Ledger do workspace A não referencia execução do workspace B.
-3. Chave de idempotência repetida no mesmo workspace falha.
-4. Custos negativos ou `NaN`, moeda minúscula e limites de tokens inválidos falham.
-5. Estados finais exigem `concluido_em`; estados em andamento não o aceitam.
-6. `ESTORNO` exige lançamento anterior no mesmo workspace e um lançamento só pode ser estornado uma vez.
-7. `UPDATE` e `DELETE` do ledger falham, inclusive com `service_role`.
-
-## Critério para aplicação remota
-
-A aplicação remota permanece **NO-GO** até que:
-
-- seja confirmado no histórico do ambiente que a versão anterior da `0013` nunca foi aplicada;
-- todos os casos P0 passem no teste local e no projeto Supabase descartável;
-- exista backup e procedimento de rollback validado;
-- o diff final receba aprovação de Banco, Arquitetura e QA;
-- a aplicação remota seja autorizada explicitamente.
-
-Após a primeira aplicação, a `0013` torna-se imutável. Qualquer correção deve ser uma nova migração.
+- Usar SUPABASE_DB_URL ou DATABASE_URL; nunca colocar a senha em scripts.
+- Manter TLS com validação de certificado.
+- Usar o histórico oficial de migrations do Supabase como única fonte de verdade.
+- Não editar 0013 ou 0014 após a aplicação.
+- Não limpar nem reescrever o histórico Git sem autorização específica e backup.

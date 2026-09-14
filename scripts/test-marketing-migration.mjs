@@ -5,6 +5,8 @@ import { PGlite } from '@electric-sql/pglite';
 
 const migrationUrl = new URL('../supabase/migrations/0013_marketing_foundation.sql', import.meta.url);
 const sql = await readFile(fileURLToPath(migrationUrl), 'utf8');
+const hardeningUrl = new URL('../supabase/migrations/0014_security_and_idempotency.sql', import.meta.url);
+const sqlHardening = await readFile(fileURLToPath(hardeningUrl), 'utf8');
 
 function exige(descricao, padrao) {
   assert.match(sql, padrao, `Migração 0013 sem garantia: ${descricao}`);
@@ -16,6 +18,11 @@ function proibe(descricao, padrao) {
 
 assert.equal(sql.trimStart().includes('begin;'), true, 'A migração deve iniciar uma transação explícita.');
 assert.equal(sql.trimEnd().endsWith('commit;'), true, 'A migração deve finalizar a transação explicitamente.');
+assert.equal(sqlHardening.trimStart().includes('begin;'), true, 'A 0014 deve iniciar uma transação explícita.');
+assert.equal(sqlHardening.trimEnd().endsWith('commit;'), true, 'A 0014 deve finalizar a transação explicitamente.');
+assert.match(sqlHardening, /create unique index if not exists resultado_sorteio_id_uk/i);
+assert.match(sqlHardening, /marketing_criar_briefing_idempotente/i);
+assert.match(sqlHardening, /revoke delete on table public\.resultado/i);
 
 const tabelasRls = [
   'marketing_workspace',
@@ -96,6 +103,19 @@ async function prepararSupabaseDescartavel(db) {
     $$;
     grant usage on schema auth to anon, authenticated, service_role;
     grant execute on function auth.uid() to anon, authenticated, service_role;
+
+    create table public.import_job (sorteio_id uuid);
+    create table public.qualificacao (sorteio_id uuid);
+    create table public.chance (comentario_id uuid);
+    create table public.resultado (id uuid, sorteio_id uuid);
+    create table public._migracoes (nome text primary key);
+    create function public.bloquear_mutacao()
+    returns trigger language plpgsql as $$ begin raise exception 'imutável'; end; $$;
+    alter table public.resultado enable row level security;
+    create policy own_resultado_delete on public.resultado
+      for delete to authenticated using (true);
+    grant delete on public.resultado to authenticated;
+    grant select on public._migracoes to anon, authenticated;
   `);
 }
 
@@ -105,6 +125,37 @@ try {
   await prepararSupabaseDescartavel(db);
 
   await db.exec(sql);
+  await db.exec(sqlHardening);
+
+  const endurecimento = await db.query(`
+    select
+      (select relrowsecurity from pg_catalog.pg_class
+        where oid = 'public._migracoes'::pg_catalog.regclass) as migracoes_rls,
+      pg_catalog.has_table_privilege('anon', 'public._migracoes', 'SELECT') as anon_migracoes,
+      pg_catalog.has_table_privilege('authenticated', 'public.resultado', 'DELETE') as auth_resultado_delete,
+      (select count(*)::integer
+         from pg_catalog.pg_proc as p
+         join pg_catalog.pg_namespace as n on n.oid = p.pronamespace
+        where n.nspname = 'public' and p.proname like 'marketing\\_%' escape '\\'
+          and pg_catalog.has_function_privilege('anon', p.oid, 'EXECUTE')) as funcoes_anon
+  `);
+  assert.equal(endurecimento.rows[0].migracoes_rls, true, '_migracoes permaneceu sem RLS.');
+  assert.equal(endurecimento.rows[0].anon_migracoes, false, 'anon ainda lê _migracoes.');
+  assert.equal(endurecimento.rows[0].auth_resultado_delete, false, 'authenticated ainda apaga resultado diretamente.');
+  assert.equal(endurecimento.rows[0].funcoes_anon, 0, 'anon ainda executa funções Marketing.');
+
+  await db.query(
+    'insert into public.resultado (id, sorteio_id) values ($1, $2)',
+    ['11111111-aaaa-4111-8111-111111111111', '22222222-aaaa-4222-8222-222222222222'],
+  );
+  await esperaErro(
+    'Um sorteio não pode ter dois resultados',
+    () => db.query(
+      'insert into public.resultado (id, sorteio_id) values ($1, $2)',
+      ['33333333-aaaa-4333-8333-333333333333', '22222222-aaaa-4222-8222-222222222222'],
+    ),
+    '23505',
+  );
 
   const tabelasCriadas = await db.query(`
     select count(*)::integer as total
@@ -140,6 +191,29 @@ try {
     ['Nome ignorado pela idempotência', workspaceKeyA],
   );
   assert.equal(repeticao.rows[0].id, workspaceIdA, 'A criação idempotente duplicou o workspace.');
+
+  const briefingKey = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  const briefingIdempotente = await db.query(
+    'select * from public.marketing_criar_briefing_idempotente($1, $2, $3)',
+    [workspaceIdA, briefingKey, 'Ideia idempotente'],
+  );
+  const briefingRepetido = await db.query(
+    'select * from public.marketing_criar_briefing_idempotente($1, $2, $3)',
+    [workspaceIdA, briefingKey, 'Ideia idempotente'],
+  );
+  assert.equal(
+    briefingRepetido.rows[0].id,
+    briefingIdempotente.rows[0].id,
+    'A repetição da criação idempotente gerou outro briefing.',
+  );
+  await esperaErro(
+    'Uma chave idempotente não pode representar outro briefing',
+    () => db.query(
+      'select * from public.marketing_criar_briefing_idempotente($1, $2, $3)',
+      [workspaceIdA, briefingKey, 'Conteúdo diferente'],
+    ),
+    '22023',
+  );
 
   const membrosIniciais = await db.query(
     'select user_id, papel from public.marketing_member where workspace_id = $1',
@@ -511,7 +585,7 @@ try {
     '23514',
   );
 
-  console.log('Migração 0013: execução real e invariantes críticas verificadas no PostgreSQL descartável.');
+  console.log('Migrações 0013–0014: execução real e invariantes críticas verificadas no PostgreSQL descartável.');
 } finally {
   await db.close();
 }
