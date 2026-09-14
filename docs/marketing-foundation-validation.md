@@ -2,7 +2,7 @@
 
 ## Estado e limite desta etapa
 
-A migração `0013_marketing_foundation.sql` foi endurecida apenas no repositório local. Ela não está autorizada para aplicação remota. Este roteiro deve ser executado primeiro em um banco PostgreSQL/Supabase descartável, sem reutilizar credenciais ou dados de produção.
+A migração `0013_marketing_foundation.sql` foi endurecida apenas no repositório local. Ela não está autorizada para aplicação remota. A primeira camada deste roteiro já é executada em um PostgreSQL descartável em memória, sem reutilizar credenciais ou dados de produção.
 
 ## Gates automáticos atuais
 
@@ -12,14 +12,33 @@ Na raiz do projeto:
 npm test
 ```
 
-Esse comando executa as garantias estáticas da migração e toda a suíte do frontend. O teste estático confirma a presença de RLS nas seis tabelas, FKs compostas por workspace, idempotência, proteção do último administrador, auditoria e ledger append-only, controle otimista e ausência de escrita direta sensível.
+Esse comando executa as garantias estáticas, aplica a migração integralmente em uma instância PGlite descartável e roda toda a suíte do frontend. O banco de teste reproduz os papéis `anon`, `authenticated` e `service_role`, incluindo `BYPASSRLS` do papel de serviço, além de uma implementação mínima de `auth.uid()`.
 
-O teste estático não interpreta SQL e não substitui os cenários abaixo em PostgreSQL real.
+Os testes automatizados confirmam atualmente:
+
+- criação das seis tabelas e ativação de RLS;
+- bloqueio de acesso anônimo e de sessão sem usuário;
+- criação idempotente de workspace e associação de exatamente um administrador;
+- separação entre permissões de administrador e revisor;
+- isolamento de leitura entre dois workspaces;
+- criação, classificação e edição otimista de briefing;
+- rejeição de escrita direta pelo cliente autenticado;
+- proteção do último administrador;
+- escrita server-side de execução e custo, com estados, idempotência e valores válidos;
+- estorno obrigatório, único e ligado ao lançamento original;
+- ausência de `UPDATE`/`DELETE` no ledger e na auditoria;
+- FKs compostas impedindo referência cruzada entre workspaces;
+- auditoria automática das mutações exercitadas e limite de metadados;
+- rollback integral quando uma falha é induzida antes do `commit`.
+
+PGlite executa PostgreSQL real em WebAssembly e é adequado para migrações e testes locais. Ainda assim, ele não substitui o ensaio final em um projeto Supabase descartável, necessário para validar os componentes específicos da plataforma, as migrações anteriores e concorrência entre conexões reais.
+
+Permanecem exclusivos do ensaio Supabase: aplicação encadeada das migrações `0001` a `0013`, confirmação dos proprietários das funções, concorrência real na remoção de administradores e validação ponta a ponta dos claims emitidos pelo Auth/Data API.
 
 ## Pré-condições para o banco descartável
 
 - Confirmar que o ambiente não contém dados ou credenciais reais.
-- Aplicar as migrações `0001` a `0013` em ordem e em uma base recém-criada.
+- Aplicar as migrações `0001` a `0013` em ordem e em uma base Supabase recém-criada.
 - Usar ao menos três usuários de teste: administrador, revisor e não membro.
 - Criar dois workspaces independentes para os testes de isolamento.
 - Manter logs da aplicação das migrações e das asserções, sem tokens ou dados pessoais.
@@ -80,7 +99,7 @@ O teste estático não interpreta SQL e não substitui os cenários abaixo em Po
 A aplicação remota permanece **NO-GO** até que:
 
 - seja confirmado no histórico do ambiente que a versão anterior da `0013` nunca foi aplicada;
-- todos os casos P0 passem em banco descartável;
+- todos os casos P0 passem no teste local e no projeto Supabase descartável;
 - exista backup e procedimento de rollback validado;
 - o diff final receba aprovação de Banco, Arquitetura e QA;
 - a aplicação remota seja autorizada explicitamente.

@@ -32,7 +32,7 @@ O domínio Marketing terá tabelas, políticas RLS, auditoria e custos próprios
 - Frontend React, TypeScript, Vite, React Router e Supabase.
 - 12 migrações locais do módulo Sorteios e 9 Edge Functions de negócio.
 - Testes unitários existentes para os motores de sorteio, regras, avatar e permalink.
-- Não há repositório Git local nesta pasta; alterações desta evolução precisam ser revisadas por arquivo.
+- Há histórico Git local com baseline preservado e a fundação de Marketing isolada em branch própria.
 - Há arquivos locais sensíveis ignorados pelo `.gitignore`. Esta entrega não os lê, move, altera nem rotaciona.
 
 ## Roadmap priorizado
@@ -54,8 +54,8 @@ O domínio Marketing terá tabelas, políticas RLS, auditoria e custos próprios
 - O projeto passou a ter histórico Git local; o commit-base `9068b92` preserva o estado funcional do Sprint 1.1.
 - O endurecimento da migração `0013` está isolado na branch `feature/marketing-foundation-hardening`.
 - A migração agora inclui isolamento por workspace, RPCs transacionais, controle otimista, auditoria e ledger append-only, idempotência e privilégios mínimos.
-- `npm test` valida estaticamente essas garantias e executa a suíte do frontend.
-- A aplicação remota continua bloqueada até a execução do roteiro `docs/marketing-foundation-validation.md` em PostgreSQL/Supabase local descartável e autorização explícita.
+- `npm test` valida essas garantias estaticamente e em PostgreSQL descartável real (PGlite), além de executar a suíte do frontend.
+- A aplicação remota continua bloqueada até a conclusão dos casos P0 restantes em um projeto Supabase descartável, revisão final e autorização explícita.
 
 ### Papéis iniciais
 
@@ -102,6 +102,7 @@ Uma pessoa pode abrir Marketing e Conteúdo, criar um briefing com objetivo, pú
 ### Validação do Sprint 1.1
 
 - 87 testes automatizados passaram em 9 arquivos.
+- A migração `0013` foi aplicada do zero em PostgreSQL descartável e passou nos cenários automatizados de RLS, idempotência, auditoria, concorrência otimista, privilégios e isolamento por workspace.
 - TypeScript e build de produção passaram.
 - Lint passou sem erros; permanecem três avisos preexistentes fora do domínio Marketing.
 - Smoke test em navegador confirmou a jornada `IDEIA` → `EM_BRIEFING` → `PRONTO_PARA_ESTRATEGIA`, sem duplicação.
