@@ -1,0 +1,25 @@
+# Credenciais — nunca versionar
+.supabase-token
+CREDENCIAIS-LOCAL.txt
+.env
+.env.local
+.env.production
+app/.env
+app/.env.local
+app/.env.production
+spike/.env
+spike/token.json
+spike/key.pem
+spike/cert.pem
+.claude/settings.local.json
+supabase/.temp/
+
+# Dependências e build
+node_modules/
+app/dist/
+app/node_modules/
+.vercel/
+
+# Dados de sorteio (contêm usernames — LGPD)
+comprovantes/
+.cron-secret

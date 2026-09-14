@@ -1,0 +1,168 @@
+/* ============================================================
+   ATOL Studio — tokens do design system da Atol AI
+   Fonte: spec-kits/redesign-atol.handoff.md (Seção Design Tokens)
+   ============================================================ */
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import './styles/sorteio.css';
+
+:root {
+  /* superfícies — do mais escuro ao mais claro */
+  --ink:        #061820;
+  --ink-2:      #0A2230;
+  --navy:       #0E2A3F;
+  --surface:    #102C3D;
+  --surface-2:  #143447;
+  --card:       #173B50;
+  --card-2:     #1C485F;
+  --hairline:   rgba(235, 223, 201, 0.10);
+  --hairline-2: rgba(235, 223, 201, 0.18);
+
+  /* texto */
+  --text:    #F2E8D6;
+  --text-2:  #C9C0AC;
+  --muted:   #8FA0A8;
+  --muted-2: #6A7B83;
+
+  /* acentos */
+  --teal:       #5CC5BE;
+  --teal-deep:  #2BA7A8;
+  --teal-glow:  rgba(92, 197, 190, 0.18);
+  --aqua:       #9FE0E1;
+  --coral:      #ED9079;
+  --coral-deep: #DC6E58;
+  --coral-glow: rgba(237, 144, 121, 0.16);
+  --sand:       #EBDFC9;
+  --moss:       #5C9D8E;
+  --algae:      #8FB873;
+
+  /* semântico */
+  --ok:      #6FCE9F;  --ok-bg:     rgba(111, 206, 159, 0.12);
+  --warn:    #E8B85F;  --warn-bg:   rgba(232, 184, 95, 0.14);
+  --danger:  #E37464;  --danger-bg: rgba(227, 116, 100, 0.14);
+
+  /* raios */
+  --radius-sm: 8px;
+  --radius:    14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+
+  color-scheme: dark;
+  font-family: 'Manrope', system-ui, -apple-system, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+h1, h2, h3 { margin: 0; line-height: 1.15; font-weight: 400; }
+
+a { color: var(--teal); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+button { font-family: inherit; }
+
+/* foco visível em todo controle interativo (acessibilidade) */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+/* ---------- utilitários da marca Atol ---------- */
+.ra-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ra-brand-logo {
+  width: 36px; height: 36px; border-radius: 50%; overflow: hidden; flex-shrink: 0;
+  background: var(--card); border: 1px solid var(--hairline-2);
+  display: grid; place-items: center;
+}
+.ra-brand-logo img { width: 100%; height: 100%; object-fit: cover; object-position: center; }
+.ra-brand-text { display: flex; flex-direction: column; line-height: 1.1; min-width: 0; }
+.ra-brand-name {
+  font-family: 'Instrument Serif', serif; font-size: 20px; font-weight: 400;
+  color: var(--text); letter-spacing: 0.01em;
+}
+.ra-brand-name em { font-style: italic; color: var(--teal); }
+.ra-brand-tag {
+  font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.16em;
+  color: var(--muted); font-weight: 600;
+}
+.ra-eyebrow {
+  font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase;
+  font-weight: 700; color: var(--muted); margin: 0 0 8px;
+  display: flex; align-items: center; gap: 8px;
+}
+.ra-eyebrow::before {
+  content: ''; width: 6px; height: 6px; background: var(--teal); border-radius: 50%;
+}
+
+.sx-rail-grupo--secundario { display: contents; }
+
+/* números sempre alinhados em colunas */
+.sx-stat-n, .sx-kv dd, .sx-stepper span, .sx-proof-num strong, .sx-rail-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- responsivo ---------- */
+@media (max-width: 1023px) {
+  .sx-rail { width: 64px; padding: 12px 8px; }
+  .sx-rail-label { display: none; }
+  .sx-rail-item { justify-content: center; padding: 11px 0; }
+  .sx-rail-item span:not(.sx-rail-num) { display: none; }
+  .sx-rail-item .sx-rail-num { display: none; }
+  .sx-main { padding: 20px; }
+  .sx-proof-row { flex-direction: column; }
+}
+
+@media (max-width: 639px) {
+  /* rail vira barra inferior com os destinos principais */
+  .sx-body { flex-direction: column; }
+  .sx-rail {
+    order: 2; width: 100%; flex-direction: row; justify-content: space-around;
+    border-right: none; border-top: 1px solid var(--hairline);
+    padding: 6px 4px; overflow: visible; flex: none;
+  }
+  .sx-rail-item { flex-direction: column; gap: 3px; min-height: 44px; min-width: 44px; }
+  .sx-rail-item span:not(.sx-rail-num) {
+    display: block; max-width: 72px; font-size: 9.5px; line-height: 1.15; text-align: center;
+  }
+  .sx-rail-item.is-active { box-shadow: inset 0 2px 0 var(--teal); }
+  .sx-rail-grupo--secundario { display: none; }
+  .sx-main { order: 1; padding: 16px 16px 32px; }
+  .sx-top { padding: 10px 14px; }
+  .sx-brand-tag-mobile { display: none; }
+  .sx-h1 { font-size: 25px; }
+  .sx-posts { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); }
+  .sx-stats { grid-template-columns: repeat(2, 1fr); }
+  .sx-seg, .sx-stepper { width: 100%; }
+  .sx-seg button { padding: 12px 10px; }
+  .sx-stepper button { width: 44px; height: 44px; }
+  .sx-filter { padding: 11px 16px; }
+  .sx-p-txt { max-width: 30ch; }
+  .sx-proof { width: 100%; max-width: 320px; }
+  .sx-btn { padding: 13px 18px; }
+  .sm-head-row { align-items:stretch; flex-direction:column; }
+  .sm-head-row .sx-btn { width:100%; }
+  .sm-grid-2 { grid-template-columns:1fr; }
+  .sm-item { flex-direction:column; gap:7px; }
+  .sm-item-date { width:auto; }
+}
+
+/* palco em tela cheia: o vencedor precisa ser legível de longe */
+@media (max-width: 639px) {
+  .sx-stage { padding: 22px 14px; }
+  .sx-winner-user { font-size: 30px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
