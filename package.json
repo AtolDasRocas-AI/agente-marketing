@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "npm run test:database && npm --prefix app test",
+    "test:database": "node scripts/test-marketing-migration.mjs"
   },
   "keywords": [],
   "author": "",

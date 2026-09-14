@@ -49,6 +49,14 @@ O domínio Marketing terá tabelas, políticas RLS, auditoria e custos próprios
 
 ## Sprint 0 — decisões e proteção
 
+### Estado da fundação em 14/09/2026
+
+- O projeto passou a ter histórico Git local; o commit-base `9068b92` preserva o estado funcional do Sprint 1.1.
+- O endurecimento da migração `0013` está isolado na branch `feature/marketing-foundation-hardening`.
+- A migração agora inclui isolamento por workspace, RPCs transacionais, controle otimista, auditoria e ledger append-only, idempotência e privilégios mínimos.
+- `npm test` valida estaticamente essas garantias e executa a suíte do frontend.
+- A aplicação remota continua bloqueada até a execução do roteiro `docs/marketing-foundation-validation.md` em PostgreSQL/Supabase local descartável e autorização explícita.
+
 ### Papéis iniciais
 
 | Papel | Permissões no Marketing |
