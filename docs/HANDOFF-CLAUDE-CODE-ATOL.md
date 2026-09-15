@@ -16,6 +16,7 @@ Evoluir este repositório em uma ferramenta externa de marketing e inteligência
 - Supabase correto: projeto **Sorteio**, ref `uakwbtmbhwifiekwmsbq`, URL `https://uakwbtmbhwifiekwmsbq.supabase.co`.
 - Nunca usar o projeto/ref antigo `ltrhsljnzuxoqyoodbfu`.
 - `npx supabase <comando> --project-ref uakwbtmbhwifiekwmsbq` funciona autenticado direto pelo Claude Code nesta máquina, depois que o responsável roda `supabase login` uma vez em qualquer terminal local (a sessão do CLI não é por-terminal). Foi assim que o deploy de `marketing-gerar-conteudo` (2026-09-15) foi feito. Continua valendo nunca ler `.supabase-token` deste repo — não foi e não é necessário para isso.
+- **Não rodar `supabase db push` neste projeto sem investigar antes.** `supabase migration list` mostra que o histórico remoto registra 0013–0019 sob versões timestamp (ex.: `20260914212813`), não sob os nomes locais (`0013`, `0014`...) — ou seja, o CLI não reconhece nenhuma migração local como já aplicada e um `db push` tentaria reexecutar 0001–0020 inteiras, provavelmente falhando em `create table`/`create function` já existentes. Para aplicar só um arquivo novo específico, use `supabase db query --linked --project-ref uakwbtmbhwifiekwmsbq --file supabase/migrations/000X_arquivo.sql` (foi assim que a 0020 foi aplicada).
 
 ### Banco remoto confirmado
 
@@ -28,10 +29,11 @@ As migrações abaixo estão aplicadas no Supabase Sorteio:
 - `0017_content_approval_workflow`
 - `0018_marketing_instagram_readonly`
 - `0019_marketing_context_notes`
+- `0020_google_only_atol_auth` — aplicada nesta sessão via `supabase db query --file` (não por `db push`; ver nota acima). Confirmado com `select proname, prosecdef from pg_proc where proname = 'hook_permitir_somente_google_atol'` retornando a função.
 
 O arquivo local `supabase/migrations/0019_marketing_context_notes.sql` foi validado contra o banco e versionado nesta sessão — não precisa ser reaplicado.
 
-**Ainda não aplicada remotamente:** `0020_google_only_atol_auth` (cria `hook_permitir_somente_google_atol`). Passou em `npm run test:database` localmente e foi versionada nesta sessão, mas a aplicação no Supabase remoto e a ativação manual como **Before User Created Hook** continuam pendentes — decisão de aplicar ficou para depois.
+**Ainda pendente mesmo com a 0020 aplicada:** a função `hook_permitir_somente_google_atol` existe no banco, mas **não está ativa** como hook — falta selecioná-la manualmente em Auth > Hooks > Before User Created no painel Supabase (não há CLI/API para esse passo específico). Sem isso, o Google continua criando qualquer conta normalmente; a restrição às duas contas autorizadas só passa a valer depois desse passo manual.
 
 O banco de Marketing já possui:
 
@@ -74,7 +76,7 @@ Passaram por `npm run check` completo (segurança, migrações, testes, lint, bu
 - `docs/ativacao-google-only-atol.md`
   - roteiro de ativação do Google-only no Supabase Auth.
 
-Continua valendo: não aplicar a 0020 no Supabase remoto nem publicar no Vercel sem confirmação explícita de quem está conduzindo.
+A 0020 foi aplicada nesta sessão (ver "Banco remoto confirmado" acima), a pedido explícito do responsável. Continua valendo: não publicar no Vercel sem confirmação explícita de quem está conduzindo.
 
 ## Sequência obrigatória de validação
 
@@ -99,11 +101,11 @@ Continua valendo: não aplicar a 0020 no Supabase remoto nem publicar no Vercel 
 
 ### Google-only
 
-Após a migração 0020 estar aplicada, no painel Supabase Auth:
+Migração 0020 já aplicada (função existe no banco). No painel Supabase Auth ainda faltam, sem confirmação de que algum já foi feito exceto o item 2:
 
 1. habilitar Google e desabilitar Email, telefone e outros provedores;
-2. inserir Client ID e Client Secret OAuth do Google;
-3. selecionar `public.hook_permitir_somente_google_atol` como **Before User Created Hook**;
+2. ~~inserir Client ID e Client Secret OAuth do Google~~ — parece feito (screenshot desta sessão mostrava o provedor Google já ligado com Client ID/Secret preenchidos e callback URL correta);
+3. selecionar `public.hook_permitir_somente_google_atol` como **Before User Created Hook** — só isso ativa a restrição às duas contas; sem esse passo o Google continua aberto para qualquer conta;
 4. configurar a URL/redirect de produção para `https://app-one-fawn-32.vercel.app`.
 
 Não tentar adivinhar, criar ou registrar credenciais OAuth.
