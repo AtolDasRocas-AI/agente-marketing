@@ -101,16 +101,31 @@ A 0020 foi aplicada nesta sessão (ver "Banco remoto confirmado" acima), a pedid
 
 ### Google-only
 
-Migração 0020 já aplicada (função existe no banco). No painel Supabase Auth ainda faltam, sem confirmação de que algum já foi feito exceto o item 2:
+Migração 0020 já aplicada (função existe no banco). Checklist original de 4 passos no painel Supabase Auth:
 
-1. habilitar Google e desabilitar Email, telefone e outros provedores;
-2. ~~inserir Client ID e Client Secret OAuth do Google~~ — parece feito (screenshot desta sessão mostrava o provedor Google já ligado com Client ID/Secret preenchidos e callback URL correta);
-3. selecionar `public.hook_permitir_somente_google_atol` como **Before User Created Hook** — só isso ativa a restrição às duas contas; sem esse passo o Google continua aberto para qualquer conta;
-4. configurar a URL/redirect de produção para `https://app-one-fawn-32.vercel.app`.
+1. habilitar Google e desabilitar Email, telefone e outros provedores — **ainda não feito**: `supabase config pull` (nesta sessão) mostrou `auth.email.enable_confirmations = true` e `auth.sms.twilio.enabled = true` remotamente, ou seja, Email e SMS/Twilio continuam habilitados;
+2. ~~inserir Client ID e Client Secret OAuth do Google~~ — **feito**, confirmado tanto pelo screenshot do responsável quanto pelo `config pull` (`auth.external.google.enabled = true`, client_id bate com o da captura);
+3. ~~selecionar `public.hook_permitir_somente_google_atol` como **Before User Created Hook**~~ — **feito nesta sessão**, ver abaixo;
+4. configurar a URL/redirect de produção para `https://app-one-fawn-32.vercel.app` — **ainda não feito**: `config pull` mostrou `auth.site_url = http://localhost:3000` e `auth.additional_redirect_urls = []` remotamente.
 
 Não tentar adivinhar, criar ou registrar credenciais OAuth.
 
-**Atualização desta sessão:** o responsável compartilhou uma captura do painel Auth > Providers mostrando o passo 1/2 aparentemente já feito — "Enable Sign in with Google" ligado, Client ID e Client Secret já preenchidos, Callback URL apontando para o projeto correto (`uakwbtmbhwifiekwmsbq.supabase.co`). Claude Code não abriu o painel Supabase nem confirmou isso diretamente, e a captura não mostra se Email/telefone foram desabilitados (passo 1) nem se o hook (passo 3) e a URL de redirect de produção (passo 4) já foram configurados — confirmar os quatro passos antes de considerar o Google-only pronto para publicar. O Client ID/Secret vistos na captura não foram registrados em nenhum arquivo deste repositório.
+**Hook ativado nesta sessão via `supabase config push` (não pelo painel):**
+
+```
+npx supabase init                                              # criou supabase/config.toml local (nao existia)
+npx supabase config pull --project-ref uakwbtmbhwifiekwmsbq --yes --force   # sincronizou com o estado real
+# editado a mao: [auth.hook.before_user_created] enabled=true, uri="pg-functions://postgres/public/hook_permitir_somente_google_atol"
+# [auth.sms.twilio] inteiro comentado — nao apagar o comentario: sem isso, config push tentaria
+# desativar o Twilio real (a API mascara account_sid/auth_token, entao o pull nunca preenche esse bloco
+# corretamente, e declarar enabled=true sem os demais campos falha na validacao do schema)
+npx supabase config diff --project-ref uakwbtmbhwifiekwmsbq     # confirmado: só o hook mudaria, Twilio ficaria remote_only/undeclared
+npx supabase config push --project-ref uakwbtmbhwifiekwmsbq --yes
+```
+
+Resposta do push confirmou `"service":"auth","status":"updated"` com as chaves do hook, e `"remote_only":1` (o Twilio, propositalmente não tocado). Um `config diff` de confirmação pós-push foi bloqueado pelo classificador de auto mode do próprio Claude Code (ação repetida de config); a confirmação que temos é a resposta do próprio `push`, que já é autoritativa.
+
+`supabase/config.toml` e `supabase/.gitignore` ficaram **não versionados** de propósito — o pull trouxe um snapshot amplo (email, mfa, pooler, storage, etc.), não só o hook, e versionar isso formalizaria um novo fluxo de "config declarativo" que ninguém pediu ainda. Se quiser adotar `config.toml` versionado como fonte de verdade daqui pra frente, é uma decisão separada — por ora o arquivo só serviu para aplicar o hook.
 
 ### Instagram e IA
 
