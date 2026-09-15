@@ -1,7 +1,7 @@
 // Classifica comentários pendentes em 7 categorias fixas via IA (Sprint C).
 // Nunca gera resposta para publicar; só rotula para leitura interna da equipe.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-import { respostaCors, respostaJson } from '../_shared/ig.ts';
+import { extrairJson, respostaCors, respostaJson } from '../_shared/ig.ts';
 
 const CATEGORIAS = ['DUVIDA', 'ELOGIO', 'RECLAMACAO', 'INTENCAO_COMPRA', 'PEDIDO_SUPORTE', 'SPAM', 'NAO_CLASSIFICADO'] as const;
 type Categoria = (typeof CATEGORIAS)[number];
@@ -113,7 +113,8 @@ Deno.serve(async (req) => {
         ],
         max_tokens: 800,
         temperature: 0,
-        response_format: { type: 'json_object' },
+        // sem response_format: suporte varia por modelo/provedor no OpenRouter;
+        // a instrucao no prompt pedindo JSON puro já é suficiente.
       }),
     });
     const corpo = await resposta.json();
@@ -129,7 +130,14 @@ Deno.serve(async (req) => {
       erro.code = 'RESPOSTA_IA_INVALIDA';
       throw erro;
     }
-    const conteudo = JSON.parse(texto) as { classificacoes?: Array<{ id?: string; categoria?: string }> };
+    let conteudo: { classificacoes?: Array<{ id?: string; categoria?: string }> };
+    try {
+      conteudo = extrairJson(texto);
+    } catch {
+      const erro = new Error('RESPOSTA_IA_INVALIDA') as Error & { code?: string };
+      erro.code = 'RESPOSTA_IA_INVALIDA';
+      throw erro;
+    }
     const classificacoes = Array.isArray(conteudo?.classificacoes) ? conteudo.classificacoes : [];
 
     const idsValidos = new Set(pendentes.map((c) => c.id as string));

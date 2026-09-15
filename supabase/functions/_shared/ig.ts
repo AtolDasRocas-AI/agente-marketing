@@ -70,6 +70,25 @@ export function respostaJson(dados: unknown, status = 200): Response {
   });
 }
 
+/**
+ * Extrai JSON de uma resposta de IA que pode vir cercada por ```json ou com texto
+ * ao redor, mesmo com o prompt pedindo só JSON — sem response_format (que nem todo
+ * modelo/provedor no OpenRouter suporta do mesmo jeito), isso é mais provável.
+ */
+export function extrairJson<T>(texto: string): T {
+  const semCercas = texto.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+  try {
+    return JSON.parse(semCercas) as T;
+  } catch {
+    const inicio = semCercas.indexOf('{');
+    const fim = semCercas.lastIndexOf('}');
+    if (inicio >= 0 && fim > inicio) {
+      return JSON.parse(semCercas.slice(inicio, fim + 1)) as T;
+    }
+    throw new Error('JSON_INVALIDO');
+  }
+}
+
 export function respostaCors(): Response {
   return new Response('ok', {
     headers: {

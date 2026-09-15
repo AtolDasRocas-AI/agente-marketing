@@ -1,7 +1,7 @@
 // Gera hipótese de inteligência de produto a partir de métricas, notas e comentários (Sprint E).
 // Regra inegociável: nunca afirma causalidade. Toda hipótese fica PENDENTE até decisão humana.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-import { respostaCors, respostaJson } from '../_shared/ig.ts';
+import { extrairJson, respostaCors, respostaJson } from '../_shared/ig.ts';
 
 const CONFIANCAS = ['BAIXA', 'MEDIA', 'ALTA'] as const;
 
@@ -138,7 +138,9 @@ Deno.serve(async (req) => {
         ],
         max_tokens: 1200,
         temperature: 0.3,
-        response_format: { type: 'json_object' },
+        // sem response_format: nao é suportado da mesma forma por todo modelo/provedor no
+        // OpenRouter (json_object/json_schema variam por endpoint) — a instrucao no prompt
+        // pedindo JSON puro já é suficiente e funciona com qualquer modelo.
       }),
     });
     const corpo = await resposta.json();
@@ -153,9 +155,16 @@ Deno.serve(async (req) => {
       erro.code = 'RESPOSTA_IA_INVALIDA';
       throw erro;
     }
-    const conteudo = JSON.parse(texto) as {
+    let conteudo: {
       hipotese?: string; evidencias?: string[]; limitacoes?: string; confianca?: string; proxima_acao?: string;
     };
+    try {
+      conteudo = extrairJson(texto);
+    } catch {
+      const erro = new Error('RESPOSTA_IA_INVALIDA') as Error & { code?: string };
+      erro.code = 'RESPOSTA_IA_INVALIDA';
+      throw erro;
+    }
     if (!conteudo?.hipotese || !CONFIANCAS.includes((conteudo.confianca ?? '') as typeof CONFIANCAS[number])) {
       const erro = new Error('RESPOSTA_IA_INCOMPLETA') as Error & { code?: string };
       erro.code = 'RESPOSTA_IA_INCOMPLETA';
