@@ -53,7 +53,7 @@ Deno.serve(async (req) => {
     const inicioIso = inicioPeriodo.toISOString();
 
     const [{ data: metricas, error: metricasErro }, { data: notas, error: notasErro }, { data: comentarios, error: comentariosErro }] = await Promise.all([
-      admin.from('marketing_instagram_metric_snapshot').select('ig_media_id,media_type,metricas,coletado_em')
+      admin.from('marketing_instagram_metric_snapshot').select('ig_media_id,media_type,permalink,publicado_em,metricas,coletado_em')
         .eq('workspace_id', pedido.workspace_id).gte('coletado_em', inicioIso).order('coletado_em', { ascending: false }),
       admin.from('marketing_context_note').select('titulo,categoria,ocorrido_em,nota')
         .eq('workspace_id', pedido.workspace_id).is('arquivado_em', null)
@@ -82,7 +82,14 @@ Deno.serve(async (req) => {
       periodo_inicio: inicioPeriodo.toISOString().slice(0, 10),
       periodo_fim: fimPeriodo.toISOString().slice(0, 10),
       publicacoes: metricas.length,
-      metricas_agregadas: metricas.map((m) => ({ ig_media_id: m.ig_media_id, tipo: m.media_type, ...(m.metricas as Record<string, unknown>) })),
+      // sem ig_media_id: é um número técnico que não identifica nada para quem lê a
+      // hipótese depois — data e link são o que a equipe reconhece de fato.
+      metricas_agregadas: metricas.map((m) => ({
+        data_publicacao: m.publicado_em ? String(m.publicado_em).slice(0, 10) : 'sem data',
+        link: m.permalink ?? null,
+        tipo: m.media_type,
+        ...(m.metricas as Record<string, unknown>),
+      })),
       notas_de_contexto: (notas ?? []).map((n) => ({ titulo: n.titulo, categoria: n.categoria, data: n.ocorrido_em })),
       distribuicao_categorias_comentarios: distribuicaoCategorias,
     };
@@ -117,6 +124,7 @@ Deno.serve(async (req) => {
       'Você é o agente de inteligência de produto da ATOL. Analise os dados e proponha UMA hipótese revisável.',
       'Regra inegociável: nunca afirme causalidade. Uma nota de contexto só pode "coincidir com o período", nunca "causar" um resultado.',
       'Se os dados forem insuficientes para uma hipótese razoável, prefira confianca "BAIXA" a inventar uma conclusão forte.',
+      'Ao citar uma publicação específica nas evidências, refira-se por data (ex.: "o post de 12/09") ou pelo link — nunca por um identificador técnico, que não significa nada para quem lê depois.',
       'Responda só JSON com as chaves: hipotese (string), evidencias (array de strings), limitacoes (string),',
       'confianca ("BAIXA"|"MEDIA"|"ALTA"), proxima_acao (string).',
       'Dados do período:',
