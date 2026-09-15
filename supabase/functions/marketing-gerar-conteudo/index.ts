@@ -23,11 +23,14 @@ function numeroAmbiente(nome: string): number | null {
 }
 
 function promptPara(item: Record<string, unknown>, operacao: string): string {
+  const instrucaoDeCampos = operacao === 'PROMPT_IMAGEM'
+    ? 'Estruture só a chave: prompt_imagem (descrição visual detalhada, em inglês, pronta para um gerador de imagem).'
+    : 'Estruture sempre as chaves: estrategia, angulo, legenda, cta, hashtags, alt_text.';
   return [
     'Você é o assistente editorial da ATOL. Responda exclusivamente JSON válido, sem markdown.',
     'Não invente métricas, pesquisas ou promessas. Preserve linguagem clara em português do Brasil.',
     'Operação pedida: ' + operacao + '.',
-    'Estruture sempre as chaves: estrategia, angulo, legenda, cta, hashtags, alt_text.',
+    instrucaoDeCampos,
     'briefing:',
     JSON.stringify({
       titulo: item.titulo,

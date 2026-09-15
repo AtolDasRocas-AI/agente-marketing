@@ -19,6 +19,18 @@ const contextNotesUrl = new URL('../supabase/migrations/0019_marketing_context_n
 const sqlContextNotes = await readFile(fileURLToPath(contextNotesUrl), 'utf8');
 const googleOnlyAuthUrl = new URL('../supabase/migrations/0020_google_only_atol_auth.sql', import.meta.url);
 const sqlGoogleOnlyAuth = await readFile(fileURLToPath(googleOnlyAuthUrl), 'utf8');
+const restringirAcessoUrl = new URL('../supabase/migrations/0021_restringir_acesso_institucional.sql', import.meta.url);
+const sqlRestringirAcesso = await readFile(fileURLToPath(restringirAcessoUrl), 'utf8');
+const importRunUrl = new URL('../supabase/migrations/0022_marketing_instagram_import_run.sql', import.meta.url);
+const sqlImportRun = await readFile(fileURLToPath(importRunUrl), 'utf8');
+const comentariosUrl = new URL('../supabase/migrations/0023_marketing_instagram_comment.sql', import.meta.url);
+const sqlComentarios = await readFile(fileURLToPath(comentariosUrl), 'utf8');
+const notaEdicaoUrl = new URL('../supabase/migrations/0024_marketing_context_note_edicao.sql', import.meta.url);
+const sqlNotaEdicao = await readFile(fileURLToPath(notaEdicaoUrl), 'utf8');
+const insightUrl = new URL('../supabase/migrations/0025_marketing_insight.sql', import.meta.url);
+const sqlInsight = await readFile(fileURLToPath(insightUrl), 'utf8');
+const imagemUrl = new URL('../supabase/migrations/0026_marketing_image_generation.sql', import.meta.url);
+const sqlImagem = await readFile(fileURLToPath(imagemUrl), 'utf8');
 
 function exige(descricao, padrao) {
   assert.match(sql, padrao, `Migração 0013 sem garantia: ${descricao}`);
@@ -44,6 +56,18 @@ assert.equal(sqlContextNotes.trimStart().includes('begin;'), true, 'A 0019 deve 
 assert.equal(sqlContextNotes.trimEnd().endsWith('commit;'), true, 'A 0019 deve finalizar a transação explicitamente.');
 assert.equal(sqlGoogleOnlyAuth.trimStart().includes('begin;'), true, 'A 0020 deve iniciar uma transação explícita.');
 assert.equal(sqlGoogleOnlyAuth.trimEnd().endsWith('commit;'), true, 'A 0020 deve finalizar a transação explicitamente.');
+assert.equal(sqlRestringirAcesso.trimStart().includes('begin;'), true, 'A 0021 deve iniciar uma transação explícita.');
+assert.equal(sqlRestringirAcesso.trimEnd().endsWith('commit;'), true, 'A 0021 deve finalizar a transação explicitamente.');
+assert.equal(sqlImportRun.trimStart().includes('begin;'), true, 'A 0022 deve iniciar uma transação explícita.');
+assert.equal(sqlImportRun.trimEnd().endsWith('commit;'), true, 'A 0022 deve finalizar a transação explicitamente.');
+assert.equal(sqlComentarios.trimStart().includes('begin;'), true, 'A 0023 deve iniciar uma transação explícita.');
+assert.equal(sqlComentarios.trimEnd().endsWith('commit;'), true, 'A 0023 deve finalizar a transação explicitamente.');
+assert.equal(sqlNotaEdicao.trimStart().includes('begin;'), true, 'A 0024 deve iniciar uma transação explícita.');
+assert.equal(sqlNotaEdicao.trimEnd().endsWith('commit;'), true, 'A 0024 deve finalizar a transação explicitamente.');
+assert.equal(sqlInsight.trimStart().includes('begin;'), true, 'A 0025 deve iniciar uma transação explícita.');
+assert.equal(sqlInsight.trimEnd().endsWith('commit;'), true, 'A 0025 deve finalizar a transação explicitamente.');
+assert.equal(sqlImagem.trimStart().includes('begin;'), true, 'A 0026 deve iniciar uma transação explícita.');
+assert.equal(sqlImagem.trimEnd().endsWith('commit;'), true, 'A 0026 deve finalizar a transação explicitamente.');
 assert.match(sqlHardening, /create unique index if not exists resultado_sorteio_id_uk/i);
 assert.match(sqlHardening, /marketing_criar_briefing_idempotente/i);
 assert.match(sqlHardening, /revoke delete on table public\.resultado/i);
@@ -62,6 +86,21 @@ assert.match(sqlInstagramReadonly, /marketing_vincular_conta_instagram/i);
 assert.match(sqlContextNotes, /create table public\.marketing_context_note/i);
 assert.match(sqlContextNotes, /marketing_criar_nota_contexto/i);
 assert.match(sqlGoogleOnlyAuth, /hook_permitir_somente_google_atol/i);
+assert.match(sqlRestringirAcesso, /create or replace function public\.hook_permitir_somente_google_atol/i);
+assert.doesNotMatch(sqlRestringirAcesso, /lipe\.kosse/i, 'A 0021 não deve reintroduzir o e-mail pessoal.');
+assert.match(sqlImportRun, /create table public\.marketing_instagram_import_run/i);
+assert.match(sqlImportRun, /alter table public\.marketing_instagram_import_run enable row level security/i);
+assert.match(sqlComentarios, /create table public\.marketing_instagram_comment_snapshot/i);
+assert.match(sqlComentarios, /marketing_iniciar_execucao_ia_livre/i);
+assert.match(sqlComentarios, /marketing_finalizar_execucao_ia_livre/i);
+assert.match(sqlComentarios, /marketing_reclassificar_comentario/i);
+assert.match(sqlNotaEdicao, /marketing_editar_nota_contexto/i);
+assert.match(sqlNotaEdicao, /marketing_arquivar_nota_contexto/i);
+assert.match(sqlInsight, /create table public\.marketing_insight/i);
+assert.match(sqlInsight, /marketing_decidir_insight/i);
+assert.match(sqlImagem, /create table public\.marketing_image_asset/i);
+assert.match(sqlImagem, /insert into storage\.buckets/i);
+assert.match(sqlImagem, /create policy marketing_imagens_select on storage\.objects/i);
 
 const tabelasRls0013 = [
   'marketing_workspace',
@@ -166,6 +205,23 @@ async function prepararSupabaseDescartavel(db) {
       for delete to authenticated using (true);
     grant delete on public.resultado to authenticated;
     grant select on public._migracoes to anon, authenticated;
+
+    -- Reprodução mínima do schema storage do Supabase (só o suficiente para testar
+    -- bucket/policy declarados em migration; não reproduz upload/download reais).
+    create schema storage;
+    create table storage.buckets (
+      id text primary key, name text not null,
+      public boolean not null default false, file_size_limit bigint
+    );
+    create table storage.objects (
+      id uuid primary key default gen_random_uuid(),
+      bucket_id text references storage.buckets(id), name text, owner uuid, metadata jsonb
+    );
+    alter table storage.objects enable row level security;
+    grant usage on schema storage to anon, authenticated, service_role;
+    grant select on storage.buckets to anon, authenticated, service_role;
+    grant all on storage.objects to service_role;
+    grant select, insert on storage.objects to authenticated;
   `);
 }
 
@@ -182,6 +238,24 @@ try {
   await db.exec(sqlInstagramReadonly);
   await db.exec(sqlContextNotes);
   await db.exec(sqlGoogleOnlyAuth);
+  await db.exec(sqlRestringirAcesso);
+  await db.exec(sqlImportRun);
+  await db.exec(sqlComentarios);
+  await db.exec(sqlNotaEdicao);
+  await db.exec(sqlInsight);
+  await db.exec(sqlImagem);
+
+  const hookInstitucional = await db.query(
+    'select public.hook_permitir_somente_google_atol($1::jsonb) as resultado',
+    [JSON.stringify({ user: { email: 'atoldasrocas.ai@gmail.com', app_metadata: { provider: 'google' } } })],
+  );
+  assert.equal(hookInstitucional.rows[0].resultado.error, undefined, 'A conta institucional deveria ser permitida.');
+
+  const hookNegado = await db.query(
+    'select public.hook_permitir_somente_google_atol($1::jsonb) as resultado',
+    [JSON.stringify({ user: { email: 'lipe.kosse@gmail.com', app_metadata: { provider: 'google' } } })],
+  );
+  assert.equal(hookNegado.rows[0].resultado.error.http_code, 403, 'O e-mail pessoal deveria ser bloqueado após a 0021.');
 
   const endurecimento = await db.query(`
     select
@@ -739,6 +813,155 @@ try {
     () => db.query('delete from public.marketing_workspace where id = $1', [workspaceIdA]),
     '23514',
   );
+
+  await como(db, 'service_role', '');
+  const livreBloqueado = await db.query(
+    `select * from public.marketing_iniciar_execucao_ia_livre(
+      $1, $2, 'CLASSIFICAR_COMENTARIO', 'openrouter', 'modelo-teste', 800, $3, 0.001
+    )`,
+    [workspaceIdB, usuarioB, '15151515-1515-4151-8151-151515151515'],
+  );
+  assert.equal(
+    livreBloqueado.rows[0].status,
+    'BLOQUEADO',
+    'A execução livre precisa iniciar bloqueada sem orçamento configurado.',
+  );
+  assert.equal(
+    livreBloqueado.rows[0].content_item_id,
+    null,
+    'A execução livre não deveria referenciar um content_item.',
+  );
+
+  const livreIniciada = await db.query(
+    `select * from public.marketing_iniciar_execucao_ia_livre(
+      $1, $2, 'CLASSIFICAR_COMENTARIO', 'openrouter', 'modelo-teste', 800, $3, 0.01
+    )`,
+    [workspaceIdA, usuarioA, '16161616-1616-4161-8161-161616161616'],
+  );
+  assert.equal(livreIniciada.rows[0].status, 'EXECUTANDO', 'A execução livre dentro do teto não iniciou.');
+
+  const livreFinalizada = await db.query(
+    'select * from public.marketing_finalizar_execucao_ia_livre($1, $2::jsonb, $3, $4, $5)',
+    [livreIniciada.rows[0].id, JSON.stringify({ classificados: 3 }), 200, 50, 0.004],
+  );
+  assert.equal(livreFinalizada.rows[0].status, 'CONCLUIDO', 'A execução livre não foi concluída.');
+
+  const versoesAposLivre = await db.query(
+    'select count(*)::integer as total from public.marketing_content_version where ai_run_id = $1',
+    [livreIniciada.rows[0].id],
+  );
+  assert.equal(
+    versoesAposLivre.rows[0].total,
+    0,
+    'A execução livre não deveria criar marketing_content_version.',
+  );
+
+  await db.exec('reset role;');
+  await como(db, 'authenticated', usuarioA);
+  const notaChave = 'dededede-dede-4ded-8ded-dededededede';
+  const nota = await db.query(
+    `select * from public.marketing_criar_nota_contexto($1, $2, $3, 'EVENTO', $4, $5)`,
+    [workspaceIdA, notaChave, 'Nota original', '2026-09-01', 'Texto original da nota'],
+  );
+  const notaId = nota.rows[0].id;
+
+  const notaEditada = await db.query(
+    `select * from public.marketing_editar_nota_contexto($1, $2, $3, 'CAMPANHA', $4, $5)`,
+    [workspaceIdA, notaId, 'Nota editada', '2026-09-02', 'Texto editado da nota'],
+  );
+  assert.equal(notaEditada.rows[0].titulo, 'Nota editada', 'A edição da nota não foi aplicada.');
+  assert.ok(notaEditada.rows[0].editado_em, 'A edição deveria marcar editado_em.');
+
+  const notaArquivada = await db.query(
+    'select * from public.marketing_arquivar_nota_contexto($1, $2)',
+    [workspaceIdA, notaId],
+  );
+  assert.ok(notaArquivada.rows[0].arquivado_em, 'O arquivamento deveria marcar arquivado_em.');
+
+  await esperaErro(
+    'Uma nota já arquivada não deve ser editável de novo',
+    () => db.query(
+      `select * from public.marketing_editar_nota_contexto($1, $2, $3, 'EVENTO', $4, $5)`,
+      [workspaceIdA, notaId, 'Tentativa após arquivar', '2026-09-03', 'Não deveria funcionar'],
+    ),
+    'P0002',
+  );
+
+  await db.exec('reset role;');
+  const auditoriaNota = await db.query(
+    `select evento from public.marketing_audit_event
+      where workspace_id = $1 and entidade = 'marketing_context_note' and entidade_id = $2
+      order by criado_em`,
+    [workspaceIdA, notaId],
+  );
+  assert.deepEqual(
+    auditoriaNota.rows.map((r) => r.evento),
+    ['INSERT', 'UPDATE', 'UPDATE'],
+    'A edição e o arquivamento da nota deveriam ficar auditados, preservando o registro original.',
+  );
+
+  await db.exec('reset role;');
+  await como(db, 'service_role', '');
+  const insight = await db.query(
+    `insert into public.marketing_insight (
+      workspace_id, ai_run_id, periodo_inicio, periodo_fim, entrada_resumida,
+      hipotese, evidencias, limitacoes, confianca, proxima_acao, custo_usd, modelo_ia
+    ) values ($1, $2, '2026-09-01', '2026-09-07', '{}'::jsonb, 'Hipótese de teste', '[]'::jsonb, '', 'BAIXA', '', 0.01, 'modelo-teste')
+    returning *`,
+    [workspaceIdA, livreIniciada.rows[0].id],
+  );
+  const insightId = insight.rows[0].id;
+  assert.equal(insight.rows[0].decisao, 'PENDENTE', 'A hipótese deveria nascer pendente.');
+
+  await db.exec('reset role;');
+  await como(db, 'authenticated', usuarioA);
+  const insightAprovado = await db.query(
+    'select * from public.marketing_decidir_insight($1, $2, true)',
+    [workspaceIdA, insightId],
+  );
+  assert.equal(insightAprovado.rows[0].decisao, 'APROVADO', 'A aprovação da hipótese não foi registrada.');
+  assert.equal(insightAprovado.rows[0].decidido_por, usuarioA, 'A hipótese aprovada deveria registrar quem decidiu.');
+
+  await esperaErro(
+    'Uma hipótese já decidida não pode ser decidida de novo',
+    () => db.query('select * from public.marketing_decidir_insight($1, $2, false)', [workspaceIdA, insightId]),
+    '55000',
+  );
+
+  await db.exec('reset role;');
+  await como(db, 'authenticated', usuarioC);
+  await esperaErro(
+    'Um revisor não deve decidir hipóteses — só administrador',
+    () => db.query('select * from public.marketing_decidir_insight($1, $2, true)', [workspaceIdA, insightId]),
+    '42501',
+  );
+
+  await db.exec('reset role;');
+  await como(db, 'service_role', '');
+  const objetoImagem = await db.query(
+    `insert into storage.objects (bucket_id, name) values ('marketing-imagens', $1) returning id`,
+    [`${workspaceIdA}/${livreIniciada.rows[0].id}-teste.png`],
+  );
+  await db.query(
+    `insert into public.marketing_image_asset (
+      workspace_id, content_item_id, content_version_id, ai_run_id, prompt_aprovado, modelo_ia, storage_path, gerado_por
+    ) values ($1, $2, $3, $4, 'prompt de teste', 'modelo-teste', $5, $6)`,
+    [
+      workspaceIdA, briefingId, versaoIa.rows[0].id, livreIniciada.rows[0].id,
+      `${workspaceIdA}/${livreIniciada.rows[0].id}-teste.png`, usuarioA,
+    ],
+  );
+
+  await db.exec('reset role;');
+  await como(db, 'authenticated', usuarioA);
+  const objetosVisiveisMembro = await db.query('select id from storage.objects');
+  assert.equal(objetosVisiveisMembro.rows.length, 1, 'Um membro do workspace deveria ver o objeto da imagem.');
+
+  await db.exec('reset role;');
+  await como(db, 'authenticated', usuarioB);
+  const objetosVisiveisNaoMembro = await db.query('select id from storage.objects');
+  assert.equal(objetosVisiveisNaoMembro.rows.length, 0, 'Um usuário fora do workspace não deveria ver o objeto da imagem.');
+  void objetoImagem;
 
   console.log('Migrações 0013–0020: execução real e invariantes críticas verificadas no PostgreSQL descartável.');
 } finally {

@@ -155,6 +155,44 @@ export async function gerarConteudoIa(contentItemId: string, operacao: OperacaoI
   }
 }
 
+export interface ImagemGerada {
+  id: string;
+  content_version_id: string;
+  storage_path: string;
+  modelo_ia: string;
+  custo_usd: number | null;
+  gerado_em: string;
+}
+
+export async function listarImagensGeradas(contentItemId: string): Promise<ImagemGerada[]> {
+  const { data, error } = await exigirSupabase()
+    .from('marketing_image_asset')
+    .select('id,content_version_id,storage_path,modelo_ia,custo_usd,gerado_em')
+    .eq('content_item_id', contentItemId)
+    .order('gerado_em', { ascending: false });
+  if (error) throw erroRemoto(error, 'Não foi possível carregar as imagens geradas.');
+  return (data ?? []) as ImagemGerada[];
+}
+
+export async function gerarImagemIa(contentVersionId: string): Promise<void> {
+  const { data, error } = await exigirSupabase().functions.invoke('marketing-gerar-imagem', {
+    body: { content_version_id: contentVersionId, idempotency_key: crypto.randomUUID() },
+  });
+  if (error) throw erroRemoto(error, 'Não foi possível solicitar a imagem à IA.');
+  if (data?.codigo) {
+    throw new ErroAssistenteConteudo(
+      data.mensagem ?? 'A geração de imagem foi bloqueada.',
+      data.codigo,
+    );
+  }
+}
+
+export async function urlAssinadaImagem(storagePath: string): Promise<string | null> {
+  const { data, error } = await exigirSupabase().storage.from('marketing-imagens').createSignedUrl(storagePath, 3600);
+  if (error) return null;
+  return data.signedUrl;
+}
+
 export function formatarUsd(valor: number | null | undefined): string {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',

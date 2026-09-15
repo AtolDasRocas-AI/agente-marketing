@@ -3,9 +3,10 @@ import { Link, Navigate, useParams } from 'react-router-dom';
 import { Icone } from '../../components/Icone';
 import { obterRepositorioMarketingRemoto, type ConteudoMarketingRemoto } from './repositoryRemote';
 import {
-  carregarOrcamentoIa, configurarOrcamentoIa, decidirAprovacaoConteudo, formatarUsd, gerarConteudoIa,
-  listarAprovacoesConteudo, listarVersoesIa, obterPapelMarketing, OPERACOES_IA, solicitarAprovacaoConteudo,
-  type AprovacaoConteudo, type OperacaoIa, type OrcamentoIa, type PapelMarketing, type VersaoConteudoIa,
+  carregarOrcamentoIa, configurarOrcamentoIa, decidirAprovacaoConteudo, formatarUsd, gerarConteudoIa, gerarImagemIa,
+  listarAprovacoesConteudo, listarImagensGeradas, listarVersoesIa, obterPapelMarketing, OPERACOES_IA,
+  solicitarAprovacaoConteudo, urlAssinadaImagem,
+  type AprovacaoConteudo, type ImagemGerada, type OperacaoIa, type OrcamentoIa, type PapelMarketing, type VersaoConteudoIa,
 } from './aiRemote';
 
 const ROTULOS_OPERACAO: Record<OperacaoIa, string> = {
@@ -27,19 +28,21 @@ interface DadosEstrategia {
   versoes: VersaoConteudoIa[];
   aprovacoes: AprovacaoConteudo[];
   papel: PapelMarketing | null;
+  imagens: ImagemGerada[];
 }
 
 async function carregarDadosEstrategia(id: string): Promise<DadosEstrategia | null> {
   const repositorio = obterRepositorioMarketingRemoto();
   const item = await repositorio.buscar(id);
   if (!item) return null;
-  const [orcamento, versoes, aprovacoes, papel] = await Promise.all([
+  const [orcamento, versoes, aprovacoes, papel, imagens] = await Promise.all([
     carregarOrcamentoIa(item.workspace_id),
     listarVersoesIa(item.id),
     listarAprovacoesConteudo(item.id),
     obterPapelMarketing(item.workspace_id),
+    listarImagensGeradas(item.id),
   ]);
-  return { item, orcamento, versoes, aprovacoes, papel };
+  return { item, orcamento, versoes, aprovacoes, papel, imagens };
 }
 
 export function EstrategiaConteudoMarketing() {
@@ -49,11 +52,14 @@ export function EstrategiaConteudoMarketing() {
   const [versoes, setVersoes] = useState<VersaoConteudoIa[]>([]);
   const [aprovacoes, setAprovacoes] = useState<AprovacaoConteudo[]>([]);
   const [papel, setPapel] = useState<PapelMarketing | null>(null);
+  const [imagens, setImagens] = useState<ImagemGerada[]>([]);
+  const [urlsImagem, setUrlsImagem] = useState<Record<string, string>>({});
   const [operacao, setOperacao] = useState<OperacaoIa>('ESTRATEGIA');
   const [mensal, setMensal] = useState('0');
   const [porExecucao, setPorExecucao] = useState('0');
   const [carregando, setCarregando] = useState(true);
   const [gerando, setGerando] = useState(false);
+  const [gerandoImagem, setGerandoImagem] = useState<string | null>(null);
   const [salvandoOrcamento, setSalvandoOrcamento] = useState(false);
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState('');
@@ -72,6 +78,7 @@ export function EstrategiaConteudoMarketing() {
     setVersoes(dados.versoes);
     setAprovacoes(dados.aprovacoes);
     setPapel(dados.papel);
+    setImagens(dados.imagens);
   }
 
   useEffect(() => {
@@ -91,6 +98,7 @@ export function EstrategiaConteudoMarketing() {
         setVersoes(dados.versoes);
         setAprovacoes(dados.aprovacoes);
         setPapel(dados.papel);
+        setImagens(dados.imagens);
       })
       .catch((causa: unknown) => {
         if (ativo) setErro(causa instanceof Error ? causa.message : 'Não foi possível abrir o assistente.');
@@ -145,6 +153,25 @@ export function EstrategiaConteudoMarketing() {
     } catch (causa) {
       setErro(causa instanceof Error ? causa.message : 'Não foi possível enviar para aprovação.');
     }
+  }
+
+  async function gerarImagem(versaoId: string) {
+    setErro(''); setAviso(''); setGerandoImagem(versaoId);
+    try {
+      await gerarImagemIa(versaoId);
+      await recarregar();
+      setAviso('Imagem gerada a partir do prompt aprovado.');
+    } catch (causa) {
+      setErro(causa instanceof Error ? causa.message : 'Não foi possível gerar a imagem.');
+    } finally {
+      setGerandoImagem(null);
+    }
+  }
+
+  async function abrirImagem(storagePath: string) {
+    if (urlsImagem[storagePath]) return;
+    const url = await urlAssinadaImagem(storagePath);
+    if (url) setUrlsImagem((atual) => ({ ...atual, [storagePath]: url }));
   }
 
   async function decidir(approvalId: string, aprovar: boolean) {
@@ -237,7 +264,7 @@ export function EstrategiaConteudoMarketing() {
                     <h2>{ROTULOS_OPERACAO[versao.operacao]} · v{versao.numero}</h2>
                     <span className="sx-tag sx-tag--warn">{versao.origem}</span>
                   </div>
-                  {['estrategia', 'angulo', 'legenda', 'cta', 'hashtags', 'alt_text'].map((chave) => {
+                  {['estrategia', 'angulo', 'legenda', 'cta', 'hashtags', 'alt_text', 'prompt_imagem'].map((chave) => {
                     const texto = textoDaVersao(versao.conteudo, chave);
                     return texto ? <p key={chave}><strong>{chave.replace('_', ' ')}:</strong> {texto}</p> : null;
                   })}
@@ -247,6 +274,21 @@ export function EstrategiaConteudoMarketing() {
                     if (aprovacao.decisao === 'PENDENTE') return <div className="sx-actions"><span className="sx-tag sx-tag--warn">Aguardando aprovação</span>{papel === 'ADMINISTRADOR' ? <><button className="sx-btn sx-btn--ghost" type="button" onClick={() => void decidir(aprovacao.id, true)}>Aprovar</button><button className="sx-btn sx-btn--ghost" type="button" onClick={() => void decidir(aprovacao.id, false)}>Devolver</button></> : <span className="sx-hint">A decisão é feita por um administrador.</span>}</div>;
                     return <span className={aprovacao.decisao === 'APROVADO' ? 'sx-tag sx-tag--ok' : 'sx-tag sx-tag--warn'}>{aprovacao.decisao === 'APROVADO' ? 'Aprovado' : 'Devolvido para revisão'}</span>;
                   })()}
+                  {versao.operacao === 'PROMPT_IMAGEM' && aprovacoes.some((a) => a.content_version_id === versao.id && a.decisao === 'APROVADO') && (
+                    <div style={{ marginTop: 10 }}>
+                      <button className="sx-btn sx-btn--ghost" type="button" onClick={() => void gerarImagem(versao.id)} disabled={gerandoImagem === versao.id}>
+                        {gerandoImagem === versao.id ? 'Gerando imagem…' : 'Gerar imagem a partir deste prompt'}
+                      </button>
+                      {imagens.filter((img) => img.content_version_id === versao.id).map((img) => (
+                        <div key={img.id} style={{ marginTop: 8 }}>
+                          {urlsImagem[img.storage_path]
+                            ? <img src={urlsImagem[img.storage_path]} alt="Gerada por IA a partir do prompt aprovado" style={{ maxWidth: '100%', borderRadius: 10 }} />
+                            : <button className="sx-btn" type="button" onClick={() => void abrirImagem(img.storage_path)}>Ver imagem gerada</button>}
+                          <p className="sx-hint">{img.modelo_ia} · {img.custo_usd != null ? `US$ ${Number(img.custo_usd).toFixed(4)}` : '—'}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </article>
             ))}
