@@ -113,13 +113,12 @@ Não tentar adivinhar, criar ou registrar credenciais OAuth.
 
 - Reconectar `@atol.ia.oficial` aceitando a permissão de leitura de métricas; o código pede `instagram_business_manage_insights` e não pede publicação.
 - Publicar as Edge Functions locais `marketing-importar-metricas-instagram` e `marketing-gerar-conteudo` apenas após revisar o destino correto e configurar os segredos necessários.
-- Para IA: modelo e custo decididos nesta sessão (`MARKETING_AI_TEXT_MODEL=openai/gpt-4o-mini`, `MARKETING_AI_ESTIMATED_COST_USD=0.02`), mas ver `docs/estudo-llms-agentes-atol.md` — o estudo comparativo feito depois dessa decisão recomenda trocar para `openai/gpt-5.6-luna` (preço quase igual, muito mais novo e melhor ranqueado em Marketing no OpenRouter); ainda não há confirmação de qual dos dois usar. O estudo também cobre os agentes de classificação de comentários, correlação/hipóteses e geração de imagem, todos ainda não implementados. A chave OpenRouter foi fornecida pelo responsável nesta sessão, mas **ainda não foi configurada como secret no Supabase** — o ambiente do Claude Code não tem `supabase` CLI nem acesso a `.supabase-token`, então é preciso rodar manualmente (projeto `uakwbtmbhwifiekwmsbq`):
-  ```
-  supabase secrets set OPENROUTER_API_KEY=... MARKETING_AI_TEXT_MODEL=openai/gpt-4o-mini MARKETING_AI_ESTIMATED_COST_USD=0.02
-  ```
-  Sem isso a geração continua bloqueada (a function exige as três variáveis juntas, por design).
+- Para IA: modelo e custo decididos nesta sessão (`MARKETING_AI_TEXT_MODEL=openai/gpt-4o-mini`, `MARKETING_AI_ESTIMATED_COST_USD=0.02`), mas ver `docs/estudo-llms-agentes-atol.md` — o estudo comparativo feito depois dessa decisão recomenda trocar para `openai/gpt-5.6-luna` (preço quase igual, muito mais novo e melhor ranqueado em Marketing no OpenRouter); ainda não há confirmação de qual dos dois usar. O estudo também cobre os agentes de classificação de comentários, correlação/hipóteses e geração de imagem, todos ainda não implementados.
+- **Secret do OpenRouter:** o responsável reportou nesta sessão ter rodado com sucesso `supabase login`, `supabase link --project-ref uakwbtmbhwifiekwmsbq` e `supabase secrets set OPENROUTER_API_KEY=... MARKETING_AI_TEXT_MODEL=openai/gpt-4o-mini MARKETING_AI_ESTIMATED_COST_USD=0.02` no próprio terminal (Claude Code não tem CLI/token do Supabase neste ambiente para confirmar diretamente). Para conferir sem expor o valor: `supabase secrets list` mostra só os nomes configurados.
+- Mesmo com o secret configurado, a geração continua bloqueada por mais dois portões, nenhum deles resolvido ainda:
+  1. **Deploy da function:** não há confirmação de que `marketing-gerar-conteudo` (nem `marketing-importar-metricas-instagram`) já foi publicada no Supabase (`supabase functions deploy marketing-gerar-conteudo`) — ter o secret configurado não publica a function.
+  2. **Orçamento do workspace:** `marketing_ai_budget` começa zerado; um administrador do workspace precisa definir limite mensal e por execução em `/marketing/briefings/:id/estrategia` (seção "Salvar limites" em `EstrategiaConteudo.tsx`) antes de qualquer geração — isso é uma ação dentro do app, não uma migração ou secret.
 - "Modelo de imagem", citado como pendência em versões anteriores deste documento, ainda não tem nenhum código que o consuma — não é bloqueio atual.
-- Definir no aplicativo os limites mensal e por execução antes de qualquer chamada de IA (o limite mensal fica em `marketing_ai_budget`, separado do teto por execução acima).
 - A rotação da senha que existiu no histórico Git continua deliberadamente adiada por decisão do responsável.
 
 ## Agente analista de Instagram — próxima implementação
