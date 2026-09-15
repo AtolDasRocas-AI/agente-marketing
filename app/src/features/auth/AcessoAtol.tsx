@@ -1,10 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
-
-export const EMAIL_ATOL = 'atoldasrocas.ai@gmail.com';
-
-function permitido(email: string | undefined) { return email?.toLowerCase() === EMAIL_ATOL; }
+import { emailPermitido } from './acesso';
 
 export function AcessoAtol() {
   const location = useLocation();
@@ -14,7 +11,7 @@ export function AcessoAtol() {
     if (!supabase) return () => { ativo = false; };
     const client = supabase;
     client.auth.getUser().then(async ({ data }) => {
-      const ok = permitido(data.user?.email);
+      const ok = emailPermitido(data.user?.email);
       if (!ok && data.user) await client.auth.signOut();
       if (ativo) setEstado(ok ? 'OK' : 'NEGADO');
     });

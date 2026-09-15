@@ -1,6 +1,6 @@
 # Ativação de acesso Google-only da ATOL
 
-O código já limita a interface à conta `atoldasrocas.ai@gmail.com` e a migração cria a função de bloqueio de novos usuários.
+O código já limita a interface às contas `atoldasrocas.ai@gmail.com` e `lipe.kosse@gmail.com`, e a migração cria a função de bloqueio de novos usuários.
 
 ## Ações no Supabase Auth
 
@@ -9,4 +9,4 @@ O código já limita a interface à conta `atoldasrocas.ai@gmail.com` e a migra�
 3. Em **Auth > Hook**, selecionar `public.hook_permitir_somente_google_atol` como **Before User Created Hook**.
 4. Em **URL Configuration**, manter a URL de produção e permitir o retorno `https://app-one-fawn-32.vercel.app/**`.
 
-O hook bloqueia a criação de qualquer usuário cujo e-mail não seja exatamente o institucional ou cujo provedor não seja Google. A documentação oficial do Supabase confirma que o Before User Created Hook rejeita a criação de usuários antes do registro ser inserido.
+O hook bloqueia a criação de qualquer usuário cujo e-mail não esteja nessa lista de duas contas ou cujo provedor não seja Google. A documentação oficial do Supabase confirma que o Before User Created Hook rejeita a criação de usuários antes do registro ser inserido.

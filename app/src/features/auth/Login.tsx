@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Icone } from '../../components/Icone';
 import { exigirSupabase } from '../../lib/supabase';
-import { EMAIL_ATOL } from './AcessoAtol';
+import { EMAILS_PERMITIDOS } from './acesso';
 
 /** Login do organizador (sistema monousuário — P-03) */
 export function Login() {
@@ -33,11 +33,11 @@ export function Login() {
       <header className="sx-head">
         <p className="ra-eyebrow">Acesso</p>
         <h1 className="sx-h1">Entrar na <em>ATOL</em></h1>
-        <p className="sx-lede">Acesso exclusivo pela conta Google institucional.</p>
+        <p className="sx-lede">Acesso exclusivo pelas contas Google autorizadas.</p>
       </header>
 
       <section className="sx-card sx-card--pad" style={{ display: 'grid', gap: 18 }}>
-        <p className="sx-hint">Permitido somente: <b>{EMAIL_ATOL}</b></p>
+        <p className="sx-hint">Permitido somente: <b>{EMAILS_PERMITIDOS.join(' e ')}</b></p>
         {erro && (
           <div className="sx-note sx-note--warn" role="alert">
             <Icone nome="info" tamanho={15} traco={2} />

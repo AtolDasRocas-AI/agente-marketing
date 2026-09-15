@@ -57,11 +57,11 @@ Passaram por `npm run check` completo (segurança, migrações, testes, lint, bu
 
 - `supabase/migrations/0020_google_only_atol_auth.sql`
   - cria `public.hook_permitir_somente_google_atol(jsonb)`;
-  - permite criar usuários apenas via Google e apenas para `atoldasrocas.ai@gmail.com`;
+  - permite criar usuários apenas via Google e apenas para duas contas autorizadas: `atoldasrocas.ai@gmail.com` e `lipe.kosse@gmail.com` (lista ampliada nesta sessão a pedido do responsável — originalmente só a conta institucional);
   - validada localmente (`npm run test:database`), **ainda não aplicada no Supabase remoto** — decisão de aplicar ficou para depois;
   - a ativação como **Before User Created Hook** exige ação manual no painel Supabase Auth, mesmo depois de aplicada.
-- `app/src/features/auth/AcessoAtol.tsx`, `app/src/features/auth/Login.tsx` e `app/src/main.tsx`
-  - substituem login por senha por login Google e protegem quase todas as rotas da aplicação (inclusive as de Sorteio, não só Marketing) atrás do e-mail único `atoldasrocas.ai@gmail.com`;
+- `app/src/features/auth/acesso.ts` (novo), `app/src/features/auth/AcessoAtol.tsx`, `app/src/features/auth/Login.tsx` e `app/src/main.tsx`
+  - substituem login por senha por login Google e protegem quase todas as rotas da aplicação (inclusive as de Sorteio, não só Marketing) atrás da mesma lista de duas contas usada na migração 0020 (`EMAILS_PERMITIDOS` em `acesso.ts`);
   - lint, build e testes passaram; havia um bug real de TypeScript (`supabase` possivelmente nulo dentro de um closure em `AcessoAtol.tsx`) corrigido nesta sessão;
   - **atenção ao sequenciamento:** publicar este código no Vercel antes de configurar o provedor Google no painel Supabase Auth deixa a produção sem nenhum método de login funcional (a senha foi removida e o Google ainda não está habilitado).
 - `app/src/features/marketing/RelatorioSemanal.tsx`
@@ -107,11 +107,13 @@ Após a migração 0020 estar aplicada, no painel Supabase Auth:
 
 Não tentar adivinhar, criar ou registrar credenciais OAuth.
 
+**Atualização desta sessão:** o responsável compartilhou uma captura do painel Auth > Providers mostrando o passo 1/2 aparentemente já feito — "Enable Sign in with Google" ligado, Client ID e Client Secret já preenchidos, Callback URL apontando para o projeto correto (`uakwbtmbhwifiekwmsbq.supabase.co`). Claude Code não abriu o painel Supabase nem confirmou isso diretamente, e a captura não mostra se Email/telefone foram desabilitados (passo 1) nem se o hook (passo 3) e a URL de redirect de produção (passo 4) já foram configurados — confirmar os quatro passos antes de considerar o Google-only pronto para publicar. O Client ID/Secret vistos na captura não foram registrados em nenhum arquivo deste repositório.
+
 ### Instagram e IA
 
 - Reconectar `@atol.ia.oficial` aceitando a permissão de leitura de métricas; o código pede `instagram_business_manage_insights` e não pede publicação.
 - Publicar as Edge Functions locais `marketing-importar-metricas-instagram` e `marketing-gerar-conteudo` apenas após revisar o destino correto e configurar os segredos necessários.
-- Para IA: modelo e custo já decididos (`MARKETING_AI_TEXT_MODEL=openai/gpt-4o-mini`, `MARKETING_AI_ESTIMATED_COST_USD=0.02`). A chave OpenRouter foi fornecida pelo responsável nesta sessão, mas **ainda não foi configurada como secret no Supabase** — o ambiente do Claude Code não tem `supabase` CLI nem acesso a `.supabase-token`, então é preciso rodar manualmente (projeto `uakwbtmbhwifiekwmsbq`):
+- Para IA: modelo e custo decididos nesta sessão (`MARKETING_AI_TEXT_MODEL=openai/gpt-4o-mini`, `MARKETING_AI_ESTIMATED_COST_USD=0.02`), mas ver `docs/estudo-llms-agentes-atol.md` — o estudo comparativo feito depois dessa decisão recomenda trocar para `openai/gpt-5.6-luna` (preço quase igual, muito mais novo e melhor ranqueado em Marketing no OpenRouter); ainda não há confirmação de qual dos dois usar. O estudo também cobre os agentes de classificação de comentários, correlação/hipóteses e geração de imagem, todos ainda não implementados. A chave OpenRouter foi fornecida pelo responsável nesta sessão, mas **ainda não foi configurada como secret no Supabase** — o ambiente do Claude Code não tem `supabase` CLI nem acesso a `.supabase-token`, então é preciso rodar manualmente (projeto `uakwbtmbhwifiekwmsbq`):
   ```
   supabase secrets set OPENROUTER_API_KEY=... MARKETING_AI_TEXT_MODEL=openai/gpt-4o-mini MARKETING_AI_ESTIMATED_COST_USD=0.02
   ```
