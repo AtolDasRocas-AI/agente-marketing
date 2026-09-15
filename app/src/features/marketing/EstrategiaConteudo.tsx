@@ -190,7 +190,7 @@ export function EstrategiaConteudoMarketing() {
   if (carregando) return <div className="sx-wrap--narrow"><div className="sx-empty sx-card">Carregando assistente…</div></div>;
   if (!item) return <Navigate to="/marketing/agenda" replace state={{ aviso: 'O briefing não foi encontrado.' }} />;
 
-  const pronto = ['PRONTO_PARA_ESTRATEGIA', 'EM_ESTRATEGIA', 'EM_REVISAO'].includes(item.status);
+  const pronto = !['IDEIA', 'EM_BRIEFING', 'PUBLICADO'].includes(item.status);
   const orcamentoAtivo = Boolean(
     orcamento && orcamento.limite_mensal_usd > 0 && orcamento.limite_por_execucao_usd > 0,
   );

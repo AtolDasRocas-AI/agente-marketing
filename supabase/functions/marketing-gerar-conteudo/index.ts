@@ -87,7 +87,7 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (itemErro) throw itemErro;
     if (!item) return respostaJson({ codigo: 'BRIEFING_NAO_ENCONTRADO' }, 404);
-    if (!['PRONTO_PARA_ESTRATEGIA', 'EM_ESTRATEGIA', 'EM_REVISAO'].includes(item.status)) {
+    if (['IDEIA', 'EM_BRIEFING', 'PUBLICADO'].includes(item.status)) {
       return respostaJson({
         codigo: 'BRIEFING_INCOMPLETO',
         mensagem: 'Complete o briefing antes de pedir conteúdo à IA.',

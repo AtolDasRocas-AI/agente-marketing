@@ -215,6 +215,8 @@ Isso indica um padrão, não incidentes isolados: partes do módulo nunca foram 
 
 **Pendente:** você gerar uma v2 de "Prompt de imagem" (com o fix já implantado), aprovar, e testar "Gerar imagem" nela — só assim fecha AC-12 com evidência real.
 
+**Bug novo encontrado ao tentar gerar essa v2 (`eu cliquei e deu erro`):** confirmado por SQL que este item nunca teve uma segunda versão de nenhuma operação (`ANGULO`/`CTA`/`LEGENDA`/`PROMPT_IMAGEM` seguem todos em `numero: 1`) e `marketing_content_item.status = 'APROVADO'` desde que a ESTRATEGIA foi aprovada às 16:23. Causa raiz: `marketing_decidir_aprovacao_conteudo` seta `content_item.status` de forma **global ao item**, não por operação — aprovar QUALQUER UMA das 5 operações independentes trava a geração de novas versões de TODAS as outras para sempre (o botão "Gerar versão para revisão" fica desabilitado, já que o gate `pronto` só aceitava `PRONTO_PARA_ESTRATEGIA`/`EM_ESTRATEGIA`/`EM_REVISAO`). Mesmo padrão de allow-list restritivo já corrigido hoje na Agenda (commit `8a9124c`). Corrigido em `EstrategiaConteudo.tsx` (gate do frontend) e `marketing-gerar-conteudo/index.ts` (gate do backend), ambos trocados para excluir só `IDEIA`/`EM_BRIEFING`/`PUBLICADO` em vez de uma allow-list estreita — `npm run check` verde, function e frontend (Vercel) já implantados.
+
 ### 12.2 Ordem de Execução
 
 Onda 1 primeiro (mais barata, sem depender de você, encontra o que puder de forma automática). Ondas 2–5 podem ser feitas em qualquer ordem entre si — cada uma é independente das outras — mas todas dependem de você estar disponível para clicar e relatar, já que este agente não tem sessão de usuário real.
