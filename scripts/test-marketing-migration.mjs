@@ -13,6 +13,8 @@ const aiStrategyIndexesUrl = new URL('../supabase/migrations/0016_ai_strategy_in
 const sqlAiStrategyIndexes = await readFile(fileURLToPath(aiStrategyIndexesUrl), 'utf8');
 const approvalUrl = new URL('../supabase/migrations/0017_content_approval_workflow.sql', import.meta.url);
 const sqlApproval = await readFile(fileURLToPath(approvalUrl), 'utf8');
+const instagramReadonlyUrl = new URL('../supabase/migrations/0018_marketing_instagram_readonly.sql', import.meta.url);
+const sqlInstagramReadonly = await readFile(fileURLToPath(instagramReadonlyUrl), 'utf8');
 
 function exige(descricao, padrao) {
   assert.match(sql, padrao, `Migração 0013 sem garantia: ${descricao}`);
@@ -32,6 +34,8 @@ assert.equal(sqlAiStrategyIndexes.trimStart().includes('begin;'), true, 'A 0016 
 assert.equal(sqlAiStrategyIndexes.trimEnd().endsWith('commit;'), true, 'A 0016 deve finalizar a transação explicitamente.');
 assert.equal(sqlApproval.trimStart().includes('begin;'), true, 'A 0017 deve iniciar uma transação explícita.');
 assert.equal(sqlApproval.trimEnd().endsWith('commit;'), true, 'A 0017 deve finalizar a transação explicitamente.');
+assert.equal(sqlInstagramReadonly.trimStart().includes('begin;'), true, 'A 0018 deve iniciar uma transação explícita.');
+assert.equal(sqlInstagramReadonly.trimEnd().endsWith('commit;'), true, 'A 0018 deve finalizar a transação explicitamente.');
 assert.match(sqlHardening, /create unique index if not exists resultado_sorteio_id_uk/i);
 assert.match(sqlHardening, /marketing_criar_briefing_idempotente/i);
 assert.match(sqlHardening, /revoke delete on table public\.resultado/i);
@@ -45,6 +49,8 @@ assert.match(sqlAiStrategyIndexes, /marketing_content_version_ai_run_idx/i);
 assert.match(sqlApproval, /create table public\.marketing_content_approval/i);
 assert.match(sqlApproval, /marketing_solicitar_aprovacao_conteudo/i);
 assert.match(sqlApproval, /marketing_decidir_aprovacao_conteudo/i);
+assert.match(sqlInstagramReadonly, /create table public\.marketing_instagram_connection/i);
+assert.match(sqlInstagramReadonly, /marketing_vincular_conta_instagram/i);
 
 const tabelasRls0013 = [
   'marketing_workspace',
@@ -135,6 +141,11 @@ async function prepararSupabaseDescartavel(db) {
     create table public.qualificacao (sorteio_id uuid);
     create table public.chance (comentario_id uuid);
     create table public.resultado (id uuid, sorteio_id uuid);
+    create table public.ig_account (
+      id uuid primary key,
+      user_id uuid not null references auth.users(id),
+      username text not null
+    );
     create table public._migracoes (nome text primary key);
     create function public.bloquear_mutacao()
     returns trigger language plpgsql as $$ begin raise exception 'imutável'; end; $$;
@@ -156,6 +167,7 @@ try {
   await db.exec(sqlAiStrategy);
   await db.exec(sqlAiStrategyIndexes);
   await db.exec(sqlApproval);
+  await db.exec(sqlInstagramReadonly);
 
   const endurecimento = await db.query(`
     select
@@ -714,7 +726,7 @@ try {
     '23514',
   );
 
-  console.log('Migrações 0013–0017: execução real e invariantes críticas verificadas no PostgreSQL descartável.');
+  console.log('Migrações 0013–0018: execução real e invariantes críticas verificadas no PostgreSQL descartável.');
 } finally {
   await db.close();
 }

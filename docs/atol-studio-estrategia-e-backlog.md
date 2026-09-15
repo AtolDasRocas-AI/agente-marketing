@@ -39,7 +39,7 @@ O banco da aplicação principal da ATOL continua fora deste escopo. ATOL Studio
 | 1 | Agenda editorial e briefing | Usuário autenticado cria, encontra, retoma e reclassifica o mesmo briefing remotamente |
 | 2 | Assistente de conteúdo | Gateway server-side para estratégia, ângulo, legenda, CTA e prompt, com custo auditável |
 | 3 | Versões e aprovação | Versões comparáveis e aprovação humana implementadas; exportação manual pendente |
-| 4 | Instagram em leitura | Conta e métricas importadas em domínio próprio, sem publicação |
+| 4 | Instagram em leitura | Estrutura, tela e importador somente-leitura implementados; ativação depende da nova autorização Meta |
 | 5 | Imagem via OpenRouter | Geração após aprovação de prompt, com teto de custo e variantes controladas |
 | 6 | Relatório semanal e sinais de produto | Tendências e sinais acionáveis; publicação somente após aprovação explícita |
 
@@ -92,6 +92,10 @@ O app pode preparar uma estratégia, ângulo, legenda, CTA ou prompt de imagem a
 ## Sprint 3 — revisão e aprovação humana
 
 Uma versão pode ser enviada para aprovação por um membro do workspace. Apenas um administrador decide aprovar ou devolver; a decisão, o solicitante e a mudança de estado ficam registrados no banco. A aprovação não publica conteúdo e não aciona nenhuma integração externa.
+
+## Sprint 4 — Instagram em leitura
+
+O módulo de Métricas permite associar a conta Instagram já conectada ao workspace de Marketing e importar instantâneos de publicações, curtidas e comentários. A tabela de Marketing não guarda o token, o cliente não recebe credenciais e nenhuma rota de publicação é criada. A função de importação só poderá ser disponibilizada após a reconexão da conta com a permissão de insights.
 
 ### Validação atual
 
