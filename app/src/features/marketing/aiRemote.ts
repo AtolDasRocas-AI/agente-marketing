@@ -1,4 +1,5 @@
 import { exigirSupabase } from '../../lib/supabase';
+import { mensagemDeErroFuncao } from '../../lib/erro';
 
 export const OPERACOES_IA = ['ESTRATEGIA', 'ANGULO', 'LEGENDA', 'CTA', 'PROMPT_IMAGEM'] as const;
 export type OperacaoIa = (typeof OPERACOES_IA)[number];
@@ -146,7 +147,7 @@ export async function gerarConteudoIa(contentItemId: string, operacao: OperacaoI
       idempotency_key: crypto.randomUUID(),
     },
   });
-  if (error) throw erroRemoto(error, 'Não foi possível solicitar conteúdo à IA.');
+  if (error) throw new ErroAssistenteConteudo(await mensagemDeErroFuncao(error), 'INDISPONIVEL');
   if (data?.codigo) {
     throw new ErroAssistenteConteudo(
       data.mensagem ?? 'A geração de conteúdo foi bloqueada.',
@@ -178,7 +179,7 @@ export async function gerarImagemIa(contentVersionId: string): Promise<void> {
   const { data, error } = await exigirSupabase().functions.invoke('marketing-gerar-imagem', {
     body: { content_version_id: contentVersionId, idempotency_key: crypto.randomUUID() },
   });
-  if (error) throw erroRemoto(error, 'Não foi possível solicitar a imagem à IA.');
+  if (error) throw new ErroAssistenteConteudo(await mensagemDeErroFuncao(error), 'INDISPONIVEL');
   if (data?.codigo) {
     throw new ErroAssistenteConteudo(
       data.mensagem ?? 'A geração de imagem foi bloqueada.',

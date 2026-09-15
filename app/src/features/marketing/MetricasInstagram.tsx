@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { buscarContaConectada, type ContaConectada } from '../conta/api';
 import { exigirSupabase } from '../../lib/supabase';
+import { mensagemDeErroFuncao } from '../../lib/erro';
 import { obterRepositorioMarketingRemoto, type WorkspaceMarketing } from './repositoryRemote';
 
 interface Conexao { id: string; username: string }
@@ -46,7 +47,8 @@ export function MetricasInstagramMarketing() {
   async function importar() {
     if (!workspace) return; setErro(''); setAviso('');
     const { data, error } = await exigirSupabase().functions.invoke('marketing-importar-metricas-instagram', { body: { workspace_id: workspace.id } });
-    if (error || data?.codigo) { setErro(data?.codigo ?? error?.message ?? 'Importação indisponível.'); return; }
+    if (error) { setErro(await mensagemDeErroFuncao(error)); return; }
+    if (data?.codigo) { setErro(data.mensagem ?? data.codigo); return; }
     await carregar(); setAviso(`${data.importados} publicações importadas somente para leitura.`);
   }
   const likes = snapshots.reduce((total, row) => total + Number(row.metricas.likes ?? 0), 0);

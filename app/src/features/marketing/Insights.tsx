@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { exigirSupabase } from '../../lib/supabase';
+import { mensagemDeErroFuncao } from '../../lib/erro';
 import { obterRepositorioMarketingRemoto, type WorkspaceMarketing } from './repositoryRemote';
 
 interface Insight {
@@ -36,7 +37,8 @@ export function InsightsMarketing() {
     if (!workspace) return; setErro(''); setAviso(''); setGerando(true);
     try {
       const { data, error } = await exigirSupabase().functions.invoke('marketing-gerar-insight', { body: { workspace_id: workspace.id, idempotency_key: crypto.randomUUID() } });
-      if (error || data?.codigo) { setErro(data?.mensagem ?? data?.codigo ?? error?.message ?? 'Geração indisponível.'); return; }
+      if (error) { setErro(await mensagemDeErroFuncao(error)); return; }
+      if (data?.codigo) { setErro(data.mensagem ?? data.codigo); return; }
       await carregar(); setAviso('Nova hipótese gerada — revise antes de aprovar.');
     } finally { setGerando(false); }
   }

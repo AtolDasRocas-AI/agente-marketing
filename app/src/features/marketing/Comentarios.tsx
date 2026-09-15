@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { exigirSupabase } from '../../lib/supabase';
+import { mensagemDeErroFuncao } from '../../lib/erro';
 import { obterRepositorioMarketingRemoto, type WorkspaceMarketing } from './repositoryRemote';
 
 interface Comentario { id: string; ig_media_id: string; autor_username: string | null; texto: string; publicado_em: string | null; categoria: string | null }
@@ -37,13 +38,15 @@ export function ComentariosMarketing() {
   async function importar() {
     if (!workspace) return; setErro(''); setAviso('');
     const { data, error } = await exigirSupabase().functions.invoke('marketing-importar-comentarios-instagram', { body: { workspace_id: workspace.id } });
-    if (error || data?.codigo) { setErro(data?.codigo ?? error?.message ?? 'Importação indisponível.'); return; }
+    if (error) { setErro(await mensagemDeErroFuncao(error)); return; }
+    if (data?.codigo) { setErro(data.mensagem ?? data.codigo); return; }
     await carregar(); setAviso(`${data.importados} comentários importados de ${data.publicacoes} publicações.`);
   }
   async function classificar() {
     if (!workspace) return; setErro(''); setAviso('');
     const { data, error } = await exigirSupabase().functions.invoke('marketing-classificar-comentarios', { body: { workspace_id: workspace.id, idempotency_key: crypto.randomUUID() } });
-    if (error || data?.codigo) { setErro(data?.codigo ?? error?.message ?? 'Classificação indisponível.'); return; }
+    if (error) { setErro(await mensagemDeErroFuncao(error)); return; }
+    if (data?.codigo) { setErro(data.mensagem ?? data.codigo); return; }
     await carregar(); setAviso(data.classificados ? `${data.classificados} comentários classificados.` : (data.mensagem ?? 'Nada pendente.'));
   }
   async function reclassificar(id: string, categoria: string) {

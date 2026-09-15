@@ -40,7 +40,10 @@ export async function mensagemDeErroFuncao(e: unknown): Promise<string> {
   if (contexto && typeof contexto.json === 'function') {
     try {
       const corpo = await contexto.clone().json();
+      // Edge Functions de Marketing usam {codigo, mensagem} em vez de {error}.
+      if (corpo?.mensagem) return String(corpo.mensagem);
       if (corpo?.error) return String(corpo.error);
+      if (corpo?.codigo) return String(corpo.codigo);
     } catch {
       try {
         const texto = await contexto.clone().text();

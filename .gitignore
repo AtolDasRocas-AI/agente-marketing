@@ -23,3 +23,6 @@ app/node_modules/
 # Dados de sorteio (contêm usernames — LGPD)
 comprovantes/
 .cron-secret
+
+.vercel
+.env*
