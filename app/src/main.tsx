@@ -5,6 +5,21 @@ import './index.css';
 import { Layout } from './routes/Layout';
 import { AcessoAtol } from './features/auth/AcessoAtol';
 
+/**
+ * Uma aba aberta antes de um novo deploy referencia chunks com hash antigo,
+ * que deixam de existir no servidor — o import dinâmico do React Router
+ * falha com "Failed to fetch dynamically imported module". Recarrega uma
+ * vez em vez de mostrar essa tela de erro; o limite de 10s evita loop se o
+ * problema persistir por outro motivo.
+ */
+window.addEventListener('vite:preloadError', () => {
+  const chave = 'recarregou-apos-erro-chunk';
+  const ultimoAgora = Number(sessionStorage.getItem(chave) ?? 0);
+  if (Date.now() - ultimoAgora < 10_000) return;
+  sessionStorage.setItem(chave, String(Date.now()));
+  window.location.reload();
+});
+
 const router = createBrowserRouter([
   {
     path: '/',

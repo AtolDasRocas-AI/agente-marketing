@@ -152,9 +152,9 @@ export function AgendaMarketing() {
                   <Link to={`/marketing/briefings/${item.id}`} className="sx-btn sx-btn--ghost">
                     Abrir briefing
                   </Link>
-                  {item.status === 'PRONTO_PARA_ESTRATEGIA' && (
+                  {!['IDEIA', 'EM_BRIEFING'].includes(item.status) && (
                     <Link to={"/marketing/briefings/" + item.id + "/estrategia"} className="sx-btn sx-btn--primary">
-                      Preparar estratégia
+                      {item.status === 'PRONTO_PARA_ESTRATEGIA' ? 'Preparar estratégia' : 'Ver estratégia'}
                     </Link>
                   )}
                 </div>
