@@ -15,6 +15,7 @@ Evoluir este repositório em uma ferramenta externa de marketing e inteligência
 - Projeto Vercel: equipe `atol-ai-s-projects`, projeto `app`.
 - Supabase correto: projeto **Sorteio**, ref `uakwbtmbhwifiekwmsbq`, URL `https://uakwbtmbhwifiekwmsbq.supabase.co`.
 - Nunca usar o projeto/ref antigo `ltrhsljnzuxoqyoodbfu`.
+- `npx supabase <comando> --project-ref uakwbtmbhwifiekwmsbq` funciona autenticado direto pelo Claude Code nesta máquina, depois que o responsável roda `supabase login` uma vez em qualquer terminal local (a sessão do CLI não é por-terminal). Foi assim que o deploy de `marketing-gerar-conteudo` (2026-09-15) foi feito. Continua valendo nunca ler `.supabase-token` deste repo — não foi e não é necessário para isso.
 
 ### Banco remoto confirmado
 
@@ -112,12 +113,11 @@ Não tentar adivinhar, criar ou registrar credenciais OAuth.
 ### Instagram e IA
 
 - Reconectar `@atol.ia.oficial` aceitando a permissão de leitura de métricas; o código pede `instagram_business_manage_insights` e não pede publicação.
-- Publicar as Edge Functions locais `marketing-importar-metricas-instagram` e `marketing-gerar-conteudo` apenas após revisar o destino correto e configurar os segredos necessários.
+- `marketing-importar-metricas-instagram` continua sem deploy — publicar só depois de reconectar `@atol.ia.oficial` e revisar o destino.
+- `marketing-gerar-conteudo` **já está publicada** no projeto `uakwbtmbhwifiekwmsbq` (deploy feito nesta sessão via `supabase functions deploy marketing-gerar-conteudo`, confirmado como `v1 ACTIVE` em `supabase functions list`).
 - Para IA: modelo e custo decididos nesta sessão (`MARKETING_AI_TEXT_MODEL=openai/gpt-4o-mini`, `MARKETING_AI_ESTIMATED_COST_USD=0.02`), mas ver `docs/estudo-llms-agentes-atol.md` — o estudo comparativo feito depois dessa decisão recomenda trocar para `openai/gpt-5.6-luna` (preço quase igual, muito mais novo e melhor ranqueado em Marketing no OpenRouter); ainda não há confirmação de qual dos dois usar. O estudo também cobre os agentes de classificação de comentários, correlação/hipóteses e geração de imagem, todos ainda não implementados.
-- **Secret do OpenRouter:** o responsável reportou nesta sessão ter rodado com sucesso `supabase login`, `supabase link --project-ref uakwbtmbhwifiekwmsbq` e `supabase secrets set OPENROUTER_API_KEY=... MARKETING_AI_TEXT_MODEL=openai/gpt-4o-mini MARKETING_AI_ESTIMATED_COST_USD=0.02` no próprio terminal (Claude Code não tem CLI/token do Supabase neste ambiente para confirmar diretamente). Para conferir sem expor o valor: `supabase secrets list` mostra só os nomes configurados.
-- Mesmo com o secret configurado, a geração continua bloqueada por mais dois portões, nenhum deles resolvido ainda:
-  1. **Deploy da function:** não há confirmação de que `marketing-gerar-conteudo` (nem `marketing-importar-metricas-instagram`) já foi publicada no Supabase (`supabase functions deploy marketing-gerar-conteudo`) — ter o secret configurado não publica a function.
-  2. **Orçamento do workspace:** `marketing_ai_budget` começa zerado; um administrador do workspace precisa definir limite mensal e por execução em `/marketing/briefings/:id/estrategia` (seção "Salvar limites" em `EstrategiaConteudo.tsx`) antes de qualquer geração — isso é uma ação dentro do app, não uma migração ou secret.
+- **Secret do OpenRouter:** configurado — o responsável rodou `supabase login`, `supabase link --project-ref uakwbtmbhwifiekwmsbq` e `supabase secrets set OPENROUTER_API_KEY=... MARKETING_AI_TEXT_MODEL=openai/gpt-4o-mini MARKETING_AI_ESTIMATED_COST_USD=0.02` no próprio terminal. Correção a uma nota anterior deste documento: o ambiente do Claude Code **consegue** rodar `npx supabase` autenticado nesta máquina (a sessão de login do CLI é compartilhada, não é por-terminal) — foi assim que o deploy da function acima foi feito diretamente por aqui. `.supabase-token` (arquivo deste repo) continua não lido, e não foi necessário para nada disso.
+- Único portão que falta para a geração de IA funcionar: **orçamento do workspace**. `marketing_ai_budget` começa zerado; um administrador precisa definir limite mensal e por execução em `/marketing/briefings/:id/estrategia` (seção "Salvar limites" em `EstrategiaConteudo.tsx`) — isso é uma ação dentro do app, não uma migração ou secret, e ninguém fez isso ainda.
 - "Modelo de imagem", citado como pendência em versões anteriores deste documento, ainda não tem nenhum código que o consuma — não é bloqueio atual.
 - A rotação da senha que existiu no histórico Git continua deliberadamente adiada por decisão do responsável.
 
