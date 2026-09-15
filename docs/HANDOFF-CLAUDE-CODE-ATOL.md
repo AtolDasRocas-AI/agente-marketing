@@ -28,6 +28,8 @@ As migrações abaixo estão aplicadas no Supabase Sorteio:
 - `0018_marketing_instagram_readonly`
 - `0019_marketing_context_notes`
 
+**Atenção:** o arquivo local `supabase/migrations/0019_marketing_context_notes.sql` ainda não foi versionado, embora a migração já esteja aplicada remotamente. Ao retomar, valide que o arquivo local corresponde ao banco e registre-o no Git sem tentar reaplicá-lo.
+
 O banco de Marketing já possui:
 
 - agenda e briefing remoto;
@@ -62,6 +64,8 @@ Foram iniciadas, mas devem ser revisadas antes de prosseguir:
 - `app/src/features/marketing/RelatorioSemanal.tsx`
   - ganhou o formulário de notas de contexto;
   - requer validação de UI e integração com a migração 0019.
+- `supabase/migrations/0019_marketing_context_notes.sql`
+  - arquivo local correspondente a uma migração já aplicada remotamente; falta apenas validação e versionamento, não reaplicação.
 - `docs/agente-analista-instagram-atol.md`
   - especifica o agente analista em modo observação: postagens, Reels, carrosséis, comentários, marcações/menções, Stories quando a API permitir, métricas e correlação com notas.
 - `docs/ativacao-google-only-atol.md`
