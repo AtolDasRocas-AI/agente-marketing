@@ -27,6 +27,7 @@ const router = createBrowserRouter([
           { path: 'agenda', lazy: async () => ({ Component: (await import('./features/marketing/Agenda')).AgendaMarketing }) },
           { path: 'novo', lazy: async () => ({ Component: (await import('./features/marketing/NovoBriefing')).NovoBriefingMarketing }) },
           { path: 'briefings/:id', lazy: async () => ({ Component: (await import('./features/marketing/NovoBriefing')).NovoBriefingMarketing }) },
+          { path: 'briefings/:id/estrategia', lazy: async () => ({ Component: (await import('./features/marketing/EstrategiaConteudo')).EstrategiaConteudoMarketing }) },
         ],
       },
     ],

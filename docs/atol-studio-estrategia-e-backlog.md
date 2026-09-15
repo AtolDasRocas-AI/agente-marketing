@@ -1,6 +1,6 @@
 # ATOL Studio — estratégia e backlog de evolução
 
-**Status em 14/09/2026:** a fundação e a persistência remota do Sprint 1 foram implementadas na branch feature/marketing-foundation-hardening. As migrações 0013 e 0014 estão aplicadas somente no projeto Supabase **Sorteio** (uakwbtmbhwifiekwmsbq). O frontend ainda não foi publicado, a integração Meta não foi alterada e nenhuma credencial foi rotacionada.
+**Status em 14/09/2026:** os Sprints 0, 1 e a fundação técnica do Sprint 2 foram implementados na branch feature/marketing-foundation-hardening. As migrações 0013, 0014 e 0015 estão aplicadas somente no projeto Supabase **Sorteio** (uakwbtmbhwifiekwmsbq); a 0016 adiciona apenas os índices de apoio identificados pela auditoria. O frontend ainda não foi publicado, a integração Meta não foi alterada e nenhuma credencial foi rotacionada.
 
 ## Visão do produto
 
@@ -9,7 +9,7 @@ ATOL Studio é a ferramenta externa de marketing e inteligência de produto da A
 | Módulo | Finalidade | Estado atual |
 | --- | --- | --- |
 | Sorteios | Sorteios de Instagram auditáveis, com regras, comprovante e expurgo LGPD | Produto existente e protegido contra regressões |
-| Marketing e Conteúdo | Planejar, criar, revisar, aprovar, medir e aprender com conteúdo | Agenda e briefing remoto implementados; ainda sem deploy |
+| Marketing e Conteúdo | Planejar, criar, revisar, aprovar, medir e aprender com conteúdo | Agenda, briefing e estratégia assistida com orçamento protegido; ainda sem deploy |
 
 O banco da aplicação principal da ATOL continua fora deste escopo. ATOL Studio não compartilha tabelas nem permissões com essa aplicação.
 
@@ -38,7 +38,7 @@ O banco da aplicação principal da ATOL continua fora deste escopo. ATOL Studio
 | 0 | Fundação segura | Domínio isolado, RLS, auditoria, privilégios mínimos e migrations oficiais |
 | 1 | Agenda editorial e briefing | Usuário autenticado cria, encontra, retoma e reclassifica o mesmo briefing remotamente |
 | 2 | Assistente de conteúdo | Gateway server-side para estratégia, ângulo, legenda, CTA e prompt, com custo auditável |
-| 3 | Versões e aprovação | Versões comparáveis, aprovação humana e exportação manual |
+| 3 | Versões e aprovação | Versões comparáveis e aprovação humana implementadas; exportação manual pendente |
 | 4 | Instagram em leitura | Conta e métricas importadas em domínio próprio, sem publicação |
 | 5 | Imagem via OpenRouter | Geração após aprovação de prompt, com teto de custo e variantes controladas |
 | 6 | Relatório semanal e sinais de produto | Tendências e sinais acionáveis; publicação somente após aprovação explícita |
@@ -79,11 +79,25 @@ Comportamentos implementados:
 
 Estados visíveis: IDEIA, EM_BRIEFING e PRONTO_PARA_ESTRATEGIA. Preparar estratégia exige título, objetivo, público, pilar, formato, data e hipótese.
 
+## Sprint 2 — estratégia assistida e custo protegido
+
+O app pode preparar uma estratégia, ângulo, legenda, CTA ou prompt de imagem a partir de um briefing pronto. Cada solicitação recebe uma chave de idempotência, é bloqueada sem orçamento configurado e, quando concluída, cria uma versão imutável de conteúdo com custos e tokens registrados no ledger.
+
+- a chave do provedor só é aceita como segredo server-side; nunca é enviada ao navegador;
+- os limites mensal e por execução começam em zero e só um administrador do workspace pode alterá-los;
+- a Edge Function não chama nenhum provedor enquanto faltarem chave, modelo ou custo estimado;
+- a geração continua deliberadamente indisponível até a configuração explícita desses três itens;
+- 0015 cria orçamento, versões e RPCs transacionais; 0016 adiciona índices das novas relações.
+
+## Sprint 3 — revisão e aprovação humana
+
+Uma versão pode ser enviada para aprovação por um membro do workspace. Apenas um administrador decide aprovar ou devolver; a decisão, o solicitante e a mudança de estado ficam registrados no banco. A aprovação não publica conteúdo e não aciona nenhuma integração externa.
+
 ### Validação atual
 
 - npm run check passa integralmente.
 - 94 testes do frontend passam em 10 arquivos.
-- 0013 e 0014 passam juntas em PostgreSQL descartável (PGlite), incluindo privilégios, RLS, idempotência, rollback e proteção contra resultado duplicado.
+- 0013–0016 passam juntas em PostgreSQL descartável (PGlite), incluindo privilégios, RLS, idempotência, rollback, custo bloqueado sem teto e proteção contra resultado duplicado.
 - Varredura de 81 arquivos rastreados não encontra senha de banco, URL PostgreSQL com credenciais nem TLS desabilitado.
 - Lint passa sem erros ou avisos; TypeScript e build de produção passam.
 - O histórico remoto confirmou as duas migrações no projeto correto.
@@ -106,7 +120,7 @@ Estados visíveis: IDEIA, EM_BRIEFING e PRONTO_PARA_ESTRATEGIA. Preparar estrat�
 | Deploy | O frontend publicado ainda não contém esta entrega | Fazer smoke test autenticado e publicar somente após revisão do ambiente |
 | Migrações aplicadas | Arquivos aplicados são imutáveis | Toda correção futura deve ser uma nova migração transacional |
 | Rascunhos locais antigos | Podem existir dados no navegador do operador | Mostrar a quantidade e planejar importação explícita, sem sobrescrever dados remotos |
-| Edge Function de execução | A unicidade bloqueia resultado duplicado, mas o fluxo server-side ainda não é uma única transação | Criar uma RPC atômica antes de ampliar concorrência operacional |
-| Avisos do Supabase | Há políticas com custo por linha, índices novos ainda sem uso e proteções de Auth pendentes | Medir após uso real; habilitar proteção de senhas vazadas no painel antes do go-live |
+| Edge Function de execução | Uma chave de provedor, um modelo e um custo estimado ainda precisam ser definidos pelo responsável | Manter a função bloqueada e configurar os segredos somente na fase de ativação controlada |
+| Avisos do Supabase | Há funções SECURITY DEFINER intencionais com checagem interna, tabelas legadas sem policy e proteções de Auth pendentes | Manter as funções auditadas, não expor tabelas legadas e habilitar proteção de senhas vazadas no painel antes do go-live |
 | IA e custos | Uso inesperado ou chave exposta | Gateway server-side, ledger, teto e bloqueio antes de qualquer geração |
 | Integração Meta | Permissões podem divergir entre leitura e publicação | Validar no Sprint 4; nenhuma publicação automática antes de aprovação humana |

@@ -7,6 +7,12 @@ const migrationUrl = new URL('../supabase/migrations/0013_marketing_foundation.s
 const sql = await readFile(fileURLToPath(migrationUrl), 'utf8');
 const hardeningUrl = new URL('../supabase/migrations/0014_security_and_idempotency.sql', import.meta.url);
 const sqlHardening = await readFile(fileURLToPath(hardeningUrl), 'utf8');
+const aiStrategyUrl = new URL('../supabase/migrations/0015_ai_strategy_and_versions.sql', import.meta.url);
+const sqlAiStrategy = await readFile(fileURLToPath(aiStrategyUrl), 'utf8');
+const aiStrategyIndexesUrl = new URL('../supabase/migrations/0016_ai_strategy_indexes.sql', import.meta.url);
+const sqlAiStrategyIndexes = await readFile(fileURLToPath(aiStrategyIndexesUrl), 'utf8');
+const approvalUrl = new URL('../supabase/migrations/0017_content_approval_workflow.sql', import.meta.url);
+const sqlApproval = await readFile(fileURLToPath(approvalUrl), 'utf8');
 
 function exige(descricao, padrao) {
   assert.match(sql, padrao, `Migração 0013 sem garantia: ${descricao}`);
@@ -20,11 +26,27 @@ assert.equal(sql.trimStart().includes('begin;'), true, 'A migração deve inicia
 assert.equal(sql.trimEnd().endsWith('commit;'), true, 'A migração deve finalizar a transação explicitamente.');
 assert.equal(sqlHardening.trimStart().includes('begin;'), true, 'A 0014 deve iniciar uma transação explícita.');
 assert.equal(sqlHardening.trimEnd().endsWith('commit;'), true, 'A 0014 deve finalizar a transação explicitamente.');
+assert.equal(sqlAiStrategy.trimStart().includes('begin;'), true, 'A 0015 deve iniciar uma transação explícita.');
+assert.equal(sqlAiStrategy.trimEnd().endsWith('commit;'), true, 'A 0015 deve finalizar a transação explicitamente.');
+assert.equal(sqlAiStrategyIndexes.trimStart().includes('begin;'), true, 'A 0016 deve iniciar uma transação explícita.');
+assert.equal(sqlAiStrategyIndexes.trimEnd().endsWith('commit;'), true, 'A 0016 deve finalizar a transação explicitamente.');
+assert.equal(sqlApproval.trimStart().includes('begin;'), true, 'A 0017 deve iniciar uma transação explícita.');
+assert.equal(sqlApproval.trimEnd().endsWith('commit;'), true, 'A 0017 deve finalizar a transação explicitamente.');
 assert.match(sqlHardening, /create unique index if not exists resultado_sorteio_id_uk/i);
 assert.match(sqlHardening, /marketing_criar_briefing_idempotente/i);
 assert.match(sqlHardening, /revoke delete on table public\.resultado/i);
+assert.match(sqlAiStrategy, /create table public\.marketing_ai_budget/i);
+assert.match(sqlAiStrategy, /create table public\.marketing_content_version/i);
+assert.match(sqlAiStrategy, /marketing_configurar_orcamento_ia/i);
+assert.match(sqlAiStrategy, /marketing_iniciar_execucao_ia/i);
+assert.match(sqlAiStrategy, /marketing_finalizar_execucao_ia/i);
+assert.match(sqlAiStrategyIndexes, /marketing_ai_budget_atualizado_por_idx/i);
+assert.match(sqlAiStrategyIndexes, /marketing_content_version_ai_run_idx/i);
+assert.match(sqlApproval, /create table public\.marketing_content_approval/i);
+assert.match(sqlApproval, /marketing_solicitar_aprovacao_conteudo/i);
+assert.match(sqlApproval, /marketing_decidir_aprovacao_conteudo/i);
 
-const tabelasRls = [
+const tabelasRls0013 = [
   'marketing_workspace',
   'marketing_member',
   'marketing_content_item',
@@ -32,7 +54,12 @@ const tabelasRls = [
   'marketing_ai_run',
   'marketing_cost_ledger',
 ];
-for (const tabela of tabelasRls) {
+const tabelasRls = [
+  ...tabelasRls0013,
+  'marketing_ai_budget',
+  'marketing_content_version',
+];
+for (const tabela of tabelasRls0013) {
   exige(`RLS em ${tabela}`, new RegExp(`alter table public\\.${tabela} enable row level security;`, 'i'));
 }
 
@@ -66,7 +93,7 @@ proibe('perda de proveniência por SET NULL', /on delete set null/i);
 proibe('escrita autenticada direta em auditoria', /grant\s+(insert|update|delete)[\s\S]*marketing_audit_event[\s\S]*to authenticated/i);
 proibe('alteração de objetos de Sorteios', /(?:alter|create|drop)\s+(?:table|function|policy|trigger)[^;]*\bsorteio/i);
 
-console.log(`Migração 0013: ${tabelasRls.length} tabelas com garantias estáticas verificadas.`);
+console.log(`Migração 0013: ${tabelasRls0013.length} tabelas com garantias estáticas verificadas.`);
 
 const usuarioA = '11111111-1111-4111-8111-111111111111';
 const usuarioB = '22222222-2222-4222-8222-222222222222';
@@ -126,6 +153,9 @@ try {
 
   await db.exec(sql);
   await db.exec(sqlHardening);
+  await db.exec(sqlAiStrategy);
+  await db.exec(sqlAiStrategyIndexes);
+  await db.exec(sqlApproval);
 
   const endurecimento = await db.query(`
     select
@@ -537,6 +567,105 @@ try {
     '23503',
   );
 
+  await como(db, 'service_role', '');
+  const execucaoBloqueada = await db.query(
+    `select * from public.marketing_iniciar_execucao_ia(
+      $1, $2, $3, 'ESTRATEGIA', 'openrouter', 'modelo-teste', 1000, $4, 0.01
+    )`,
+    [
+      workspaceIdA, briefingId, usuarioA,
+      '12121212-1212-4121-8121-121212121212',
+    ],
+  );
+  assert.equal(
+    execucaoBloqueada.rows[0].status,
+    'BLOQUEADO',
+    'A IA precisa iniciar bloqueada sem orçamento configurado.',
+  );
+  assert.equal(
+    execucaoBloqueada.rows[0].erro_codigo,
+    'ORCAMENTO_NAO_CONFIGURADO',
+    'O bloqueio sem orçamento precisa ser explicável.',
+  );
+
+  await como(db, 'authenticated', usuarioA);
+  const budget = await db.query(
+    'select * from public.marketing_configurar_orcamento_ia($1, $2, $3)',
+    [workspaceIdA, 1, 0.1],
+  );
+  assert.equal(Number(budget.rows[0].limite_mensal_usd), 1, 'Administrador não configurou o orçamento mensal.');
+  await esperaErro(
+    'Cliente autenticado não pode iniciar execução interna de IA',
+    () => db.query(
+      `select * from public.marketing_iniciar_execucao_ia(
+        $1, $2, $3, 'ESTRATEGIA', 'openrouter', 'modelo-teste', 1000, $4, 0.01
+      )`,
+      [workspaceIdA, briefingId, usuarioA, '13131313-1313-4131-8131-131313131313'],
+    ),
+    '42501',
+  );
+
+  await como(db, 'service_role', '');
+  const execucaoIniciada = await db.query(
+    `select * from public.marketing_iniciar_execucao_ia(
+      $1, $2, $3, 'ESTRATEGIA', 'openrouter', 'modelo-teste', 1000, $4, 0.01
+    )`,
+    [workspaceIdA, briefingId, usuarioA, '14141414-1414-4141-8141-141414141414'],
+  );
+  const aiRunProtegida = execucaoIniciada.rows[0];
+  assert.equal(aiRunProtegida.status, 'EXECUTANDO', 'A reserva dentro do teto não iniciou a execução.');
+
+  const versaoIa = await db.query(
+    `select * from public.marketing_finalizar_execucao_ia($1, $2::jsonb, $3, $4, $5)`,
+    [
+      aiRunProtegida.id,
+      JSON.stringify({
+        estrategia: 'Ensinar iniciantes com um carrossel de checklist.',
+        angulo: 'Evite os três erros mais comuns.',
+        legenda: 'Comece pelo básico e salve para revisar.',
+        cta: 'Qual desses erros você já cometeu?',
+      }),
+      120,
+      80,
+      0.005,
+    ],
+  );
+  assert.equal(versaoIa.rows[0].origem, 'IA', 'A versão produzida não registrou sua origem.');
+  assert.equal(versaoIa.rows[0].numero, 1, 'A primeira versão de IA precisa iniciar em 1.');
+
+  const execucaoConcluida = await db.query(
+    'select status, custo_real, resposta from public.marketing_ai_run where id = $1',
+    [aiRunProtegida.id],
+  );
+  assert.equal(execucaoConcluida.rows[0].status, 'CONCLUIDO', 'A execução de IA não foi concluída.');
+  assert.equal(Number(execucaoConcluida.rows[0].custo_real), 0.005, 'O custo real não foi registrado.');
+  const lancamentosIa = await db.query(
+    'select tipo from public.marketing_cost_ledger where ai_run_id = $1 order by criado_em',
+    [aiRunProtegida.id],
+  );
+  assert.deepEqual(
+    lancamentosIa.rows.map((linha) => linha.tipo).sort(),
+    ['CONSUMO', 'ESTORNO', 'RESERVA'],
+    'A conclusão deve consumir o custo real e estornar a reserva.',
+  );
+
+  await como(db, 'authenticated', usuarioA);
+  const versoesVisiveis = await db.query(
+    'select * from public.marketing_content_version where content_item_id = $1',
+    [briefingId],
+  );
+  assert.equal(versoesVisiveis.rows.length, 1, 'O membro não conseguiu ler sua versão de conteúdo.');
+  await esperaErro(
+    'Cliente autenticado não grava versões diretamente',
+    () => db.query(
+      `insert into public.marketing_content_version (
+        workspace_id, content_item_id, numero, operacao, origem, conteudo, criado_por
+      ) values ($1, $2, 2, 'ESTRATEGIA', 'HUMANO', '{}'::jsonb, $3)`,
+      [workspaceIdA, briefingId, usuarioA],
+    ),
+    '42501',
+  );
+
   await db.exec('reset role;');
   const auditoria = await db.query(`
     select entidade, evento
@@ -585,7 +714,7 @@ try {
     '23514',
   );
 
-  console.log('Migrações 0013–0014: execução real e invariantes críticas verificadas no PostgreSQL descartável.');
+  console.log('Migrações 0013–0017: execução real e invariantes críticas verificadas no PostgreSQL descartável.');
 } finally {
   await db.close();
 }
