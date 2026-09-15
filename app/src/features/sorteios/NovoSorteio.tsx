@@ -1,49 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Icone, type NomeIcone } from '../../components/Icone';
+import { Icone } from '../../components/Icone';
+import { CapaPost } from '../../components/CapaPost';
 import {
-  listarMidias, criarSorteio, importarTudo, processarRegras, capaDaMidia,
+  listarMidias, criarSorteio, importarTudo, processarRegras,
   contarComentarios,
   type MidiaInstagram, type ContagemPost,
 } from './api';
 import { mensagemDeErro } from '../../lib/erro';
-
-const ICONE_TIPO: Record<string, NomeIcone> = {
-  IMAGE: 'foto',
-  VIDEO: 'video',
-  CAROUSEL_ALBUM: 'carrossel',
-};
-const ROTULO_TIPO: Record<string, string> = {
-  IMAGE: 'foto',
-  VIDEO: 'vídeo',
-  CAROUSEL_ALBUM: 'carrossel',
-};
-
-/** Capa do post; as URLs da CDN do Instagram expiram, então o fallback é obrigatório */
-function CapaPost({ midia }: { midia: MidiaInstagram }) {
-  const [falhou, setFalhou] = useState(false);
-  const capa = capaDaMidia(midia);
-
-  if (!capa || falhou) {
-    return (
-      <div className="sx-post-img">
-        <Icone nome={ICONE_TIPO[midia.media_type] ?? 'foto'} tamanho={22} traco={1.7} />
-        {ROTULO_TIPO[midia.media_type] ?? 'post'}
-      </div>
-    );
-  }
-  return (
-    <div className="sx-post-img" style={{ padding: 0 }}>
-      <img
-        src={capa}
-        alt=""
-        loading="lazy"
-        onError={() => setFalhou(true)}
-        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-      />
-    </div>
-  );
-}
 
 function Stepper({
   rotulo, valor, minimo, aoMudar,

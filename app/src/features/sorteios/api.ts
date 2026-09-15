@@ -53,26 +53,6 @@ export interface MidiaInstagram {
   };
 }
 
-/**
- * Capa correta para cada tipo de mídia:
- * VIDEO usa thumbnail_url (media_url é o arquivo de vídeo);
- * CAROUSEL_ALBUM não tem capa própria — usa o primeiro filho.
- */
-export function capaDaMidia(m: MidiaInstagram): string | null {
-  if (m.media_type === 'VIDEO') return m.thumbnail_url ?? null;
-
-  if (m.media_type === 'CAROUSEL_ALBUM') {
-    const primeiro = m.children?.data?.[0];
-    const capaFilho =
-      primeiro?.media_type === 'VIDEO'
-        ? primeiro?.thumbnail_url
-        : (primeiro?.media_url ?? primeiro?.thumbnail_url);
-    return capaFilho ?? m.media_url ?? null;
-  }
-
-  return m.media_url ?? m.thumbnail_url ?? null;
-}
-
 /** Galeria de posts da conta conectada (CAP-03) */
 export async function listarMidias(): Promise<{
   account_id: string;

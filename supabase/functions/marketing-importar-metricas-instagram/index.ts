@@ -66,7 +66,11 @@ Deno.serve(async (req) => {
       return respostaJson({ codigo: 'TOKEN_EXPIRADO' }, 401);
     }
 
-    const campos = 'id,permalink,media_type,timestamp,like_count,comments_count';
+    // media_url/thumbnail_url servem de capa na tela; expiram como qualquer URL da CDN do
+    // Instagram, por isso o frontend (CapaPost) sempre tem fallback para ícone + rótulo.
+    const campos =
+      'id,permalink,media_type,timestamp,like_count,comments_count,media_url,thumbnail_url,' +
+      'children{media_url,thumbnail_url,media_type}';
     let url: string | null =
       `${GRAPH}/${account.ig_user_id}/media?fields=${campos}&limit=${LIMITE_PAGINA}&access_token=${encodeURIComponent(token)}`;
 
@@ -89,7 +93,12 @@ Deno.serve(async (req) => {
         permalink: typeof media.permalink === 'string' ? media.permalink : null,
         media_type: typeof media.media_type === 'string' ? media.media_type : null,
         publicado_em: typeof media.timestamp === 'string' ? media.timestamp : null,
-        metricas: { likes: Number(media.like_count ?? 0), comentarios: Number(media.comments_count ?? 0) },
+        metricas: {
+          likes: Number(media.like_count ?? 0), comentarios: Number(media.comments_count ?? 0),
+          media_url: typeof media.media_url === 'string' ? media.media_url : null,
+          thumbnail_url: typeof media.thumbnail_url === 'string' ? media.thumbnail_url : null,
+          children: media.children ?? null,
+        },
         coletado_em: coletadoEm,
       }));
 
