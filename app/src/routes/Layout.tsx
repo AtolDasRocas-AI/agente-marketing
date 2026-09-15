@@ -22,8 +22,9 @@ const SORTEIOS: Destino[] = [
 ];
 
 const MARKETING: Destino[] = [
-  { para: '/marketing/agenda', rotulo: 'Agenda', icone: 'agenda', prefixo: '/marketing/', excluirPrefixos: ['/marketing/metricas'] },
+  { para: '/marketing/agenda', rotulo: 'Agenda', icone: 'agenda', prefixo: '/marketing/', excluirPrefixos: ['/marketing/metricas', '/marketing/relatorio'] },
   { para: '/marketing/metricas', rotulo: 'Métricas', icone: 'historico', prefixo: '/marketing/metricas' },
+  { para: '/marketing/relatorio', rotulo: 'Relatório', icone: 'comprovante', prefixo: '/marketing/relatorio' },
 ];
 
 const GERAL: Destino[] = [

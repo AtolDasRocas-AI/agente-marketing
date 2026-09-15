@@ -41,7 +41,7 @@ O banco da aplicação principal da ATOL continua fora deste escopo. ATOL Studio
 | 3 | Versões e aprovação | Versões comparáveis e aprovação humana implementadas; exportação manual pendente |
 | 4 | Instagram em leitura | Estrutura, tela e importador somente-leitura implementados; ativação depende da nova autorização Meta |
 | 5 | Imagem via OpenRouter | Geração após aprovação de prompt, com teto de custo e variantes controladas |
-| 6 | Relatório semanal e sinais de produto | Tendências e sinais acionáveis; publicação somente após aprovação explícita |
+| 6 | Relatório semanal e sinais de produto | Relatório semanal e hipótese priorizada a partir de métricas; publicação continua manual |
 
 ## Sprint 0 — fundação concluída
 

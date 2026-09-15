@@ -29,6 +29,7 @@ const router = createBrowserRouter([
           { path: 'briefings/:id', lazy: async () => ({ Component: (await import('./features/marketing/NovoBriefing')).NovoBriefingMarketing }) },
           { path: 'briefings/:id/estrategia', lazy: async () => ({ Component: (await import('./features/marketing/EstrategiaConteudo')).EstrategiaConteudoMarketing }) },
           { path: 'metricas', lazy: async () => ({ Component: (await import('./features/marketing/MetricasInstagram')).MetricasInstagramMarketing }) },
+          { path: 'relatorio', lazy: async () => ({ Component: (await import('./features/marketing/RelatorioSemanal')).RelatorioSemanalMarketing }) },
         ],
       },
     ],
