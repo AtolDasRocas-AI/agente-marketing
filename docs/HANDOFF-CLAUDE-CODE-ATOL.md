@@ -109,6 +109,8 @@ A 0020 foi aplicada nesta sessão (ver "Banco remoto confirmado" acima), a pedid
 
 ### Google-only
 
+Login Google-only testado e funcionando de ponta a ponta nesta sessão (conta autorizada real, via UI de produção). Com a sessão ativa, foram criados 11 briefings de conteúdo na Agenda (`/marketing/agenda`), a partir de uma análise de Instagram (`ANALISE_INSTAGRAM_ATOL_IA_2026-09-13.md`) fornecida pelo responsável — cobrindo 4 semanas (16/09 a 11/10), todos com status `PRONTO_PARA_ESTRATEGIA`. Conteúdo e datas ficam só no banco (tabela `marketing_content_item`), não neste documento — ver na própria Agenda do app.
+
 Migração 0020 já aplicada (função existe no banco). **Checklist de 4 passos completo nesta sessão:**
 
 1. ~~habilitar Google e desabilitar Email, telefone e outros provedores~~ — **feito**: Google já estava ligado; `auth.email.enable_signup` mudado de `true` para `false` via `config push` (confirmado pela saída do comando no terminal do responsável); `auth.sms.enable_signup` já estava `false` remotamente (cadastro por telefone já era bloqueado antes desta sessão). O provedor Twilio em si continua ligado (`auth.sms.twilio.enabled = true`) mas deliberadamente não foi tocado — não é usado para signup, ver nota abaixo;
