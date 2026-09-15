@@ -1,11 +1,12 @@
 // Gera imagem a partir de um PROMPT_IMAGEM já aprovado por humano (Sprint F).
 // Nunca gera sem aprovação; nunca publica automaticamente; grava em bucket privado.
 //
-// ATENÇÃO: o formato exato da resposta de imagem do OpenRouter (campo `images` na mensagem,
-// como data URI) segue a convenção documentada para modelos multimodais no momento em que
-// este código foi escrito. Revalidar contra a documentação viva do OpenRouter e testar com
-// o modelo real (ver docs/estudo-llms-agentes-atol.md) antes de liberar em produção — isto,
-// diferente do gateway de texto de marketing-gerar-conteudo, nunca foi exercitado de verdade.
+// Modelo confirmado no catálogo real do OpenRouter em 2026-09-15: google/gemini-3.1-flash-lite-image
+// ("Nano Banana 2 Lite"), $0,25/$30 por 1M tokens, exemplo real no playground custou $0,0336/imagem.
+// ATENÇÃO: o que NÃO foi confirmado é o formato exato da resposta (campo `images` na mensagem,
+// como data URI) — segue a convenção documentada para modelos multimodais, mas, diferente do
+// gateway de texto de marketing-gerar-conteudo, esta chamada nunca foi exercitada de verdade
+// contra a API. Testar com uma chamada real antes de confiar no parsing abaixo em produção.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { respostaCors, respostaJson } from '../_shared/ig.ts';
 

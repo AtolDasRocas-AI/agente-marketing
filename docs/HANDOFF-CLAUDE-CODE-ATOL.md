@@ -21,13 +21,21 @@ Resumo por onda:
 - ✅ Deploy das 7 Edge Functions: `marketing-importar-metricas-instagram` (v2, reescrita), `marketing-gerar-conteudo` (v2, fix do `prompt_imagem`), `marketing-importar-comentarios-instagram` (v1), `marketing-classificar-comentarios` (v1), `lgpd-expurgo-marketing` (v1), `marketing-gerar-insight` (v1), `marketing-gerar-imagem` (v1) — todas `ACTIVE` conforme `supabase functions list`.
   - **Correção aplicada no processo:** `lgpd-expurgo-marketing` foi implantada por padrão com `verify_jwt: true`; como a função autentica só via header `x-cron-secret` (igual a `lgpd-expurgo` de Sorteios, que tem `verify_jwt: false`), isso bloquearia a chamada do pg_cron. Reimplantada com `--no-verify-jwt` para igualar o padrão da função irmã.
 
+**Secrets de IA configurados nesta sessão (2026-09-15), com valores revalidados ao vivo no catálogo do OpenRouter antes de aplicar:**
+
+- `MARKETING_AI_COMMENT_MODEL=google/gemini-2.5-flash-lite` (confirmado $0,10/$0,40 por 1M tokens) + `MARKETING_AI_COMMENT_ESTIMATED_COST_USD=0.001` (lote de ~20 comentários, ~1500 tokens de entrada + até 800 de saída).
+- `MARKETING_AI_INSIGHT_MODEL=anthropic/claude-haiku-4.5` (confirmado $1/$5 por 1M) + `MARKETING_AI_INSIGHT_ESTIMATED_COST_USD=0.01`.
+- `MARKETING_AI_IMAGE_MODEL=google/gemini-3.1-flash-lite-image` — **atenção ao slug**: é "Nano Banana 2 Lite", não a Nano Banana original (`gemini-2.5-flash-image`); confirmado $0,25/$30 por 1M tokens, com um exemplo real no playground custando $0,0336/imagem — `MARKETING_AI_IMAGE_ESTIMATED_COST_USD=0.05` (com margem sobre esse exemplo real).
+- `marketing-gerar-imagem` reimplantada com o comentário do topo do arquivo atualizado (modelo confirmado; formato da resposta de imagem continua não testado contra a API real).
+- **Incidente no meio do processo:** a sessão do CLI do Supabase trocou de conta de novo (mesmo padrão já documentado acima) — `projects list` passou a mostrar só projetos "Atol-AI-DEV"/"AtolDasRocas-AI's Project" (o ref antigo proibido), sem o Sorteio. O responsável rodou `supabase login` de novo escolhendo a conta certa; confirmado com `uakwbtmbhwifiekwmsbq` aparecendo com `"linked": true` antes de repetir o `secrets set`.
+
 **Ainda pendente** (cada uma continua exigindo confirmação explícita própria, nunca em lote):
 
-1. Novos secrets no Supabase: `MARKETING_AI_COMMENT_MODEL` (sugestão: `google/gemini-2.5-flash-lite`) + `MARKETING_AI_COMMENT_ESTIMATED_COST_USD`; `MARKETING_AI_INSIGHT_MODEL` (sugestão: `anthropic/claude-haiku-4.5`) + `MARKETING_AI_INSIGHT_ESTIMATED_COST_USD`; `MARKETING_AI_IMAGE_MODEL` (revalidar slug no OpenRouter antes) + `MARKETING_AI_IMAGE_ESTIMATED_COST_USD`. Sem esses secrets, as 3 novas Edge Functions de IA respondem `CONFIGURACAO_IA_AUSENTE` (comportamento esperado, não é bug). `MARKETING_AI_TEXT_MODEL` trocar para `openai/gpt-5.6-luna` continua decidido mas não aplicado.
-2. `marketing_ai_budget` do workspace real: ainda zerado — configurar em `/marketing/briefings/:id/estrategia` (ação de admin no app, não secret nem migration).
+1. `MARKETING_AI_TEXT_MODEL` trocar para `openai/gpt-5.6-luna` continua decidido mas não aplicado (fora do pedido desta rodada, que era só os 3 pares que faltavam).
+2. `marketing_ai_budget` do workspace real: ainda zerado — configurar em `/marketing/briefings/:id/estrategia` (ação de admin no app, não secret nem migration). Sem isso, as 4 Edge Functions de IA (conteúdo, comentários, insight, imagem) continuam bloqueadas por orçamento mesmo com os modelos configurados.
 3. pg_cron para `lgpd-expurgo-marketing` (mesmo padrão do `lgpd-expurgo` de Sorteios) — nenhum cron foi criado nesta sessão.
 4. Reconexão do Instagram (`@atol.ia.oficial`) — segue pendente, ação humana no Meta, fora do alcance de qualquer agente. Bloqueia a validação real de todo o Sprint B e C.
-5. Validação em produção com dados reais de todos os ACs marcados como pendente em `spec-kits/atol-studio-continuacao.spec-kit.md` (Seção 6) — hoje 8 de 22.
+5. Validação em produção com dados reais de todos os ACs marcados como pendente em `spec-kits/atol-studio-continuacao.spec-kit.md` (Seção 6) — hoje 10 de 22.
 
 ## Objetivo do produto
 
