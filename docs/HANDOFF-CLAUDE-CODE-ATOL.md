@@ -40,6 +40,15 @@ Resumo por onda:
 3. Validação em produção com dados reais de todos os ACs marcados como pendente em `spec-kits/atol-studio-continuacao.spec-kit.md` (Seção 6) — hoje 10 de 22.
 4. **Recomendação operacional nova:** configurar `SUPABASE_ACCESS_TOKEN` como variável de ambiente persistente (gerado em supabase.com/dashboard/account/tokens, na conta certa) para parar de depender da sessão de login interativa do CLI, que trocou de conta 3 vezes nesta única sessão (provavelmente por outro terminal/sessão tocando o Supabase de outro projeto, ex.: `reef-system-app`). Ver [[project-atol-marketing]] na memória do Claude Code para o histórico completo do problema.
 
+## Auditoria de bugs de UI/ação (2026-09-15)
+
+Depois de 6 correções pontuais ao vivo (erro genérico de function, link de estratégia sumindo da Agenda, aprovação de conteúdo quebrada desde a 0017 por cast de enum, capa de post ausente, `response_format` incompatível no insight/comentários, auditoria de insight estourando 32KB), o responsável pediu uma varredura sistemática em vez de continuar corrigindo bug a bug — `spec-kits/auditoria-acoes-marketing.spec-kit.md` (status `approved`, Onda 1 concluída, Ondas 2-4 revisadas por código, Onda 5 com causa raiz confirmada).
+
+- **Achado e corrigido:** `marketing-gerar-conteudo/index.ts` tinha a mesma classe de bug do `response_format`/`JSON.parse` cru já visto no insight e nos comentários — nunca tinha sido corrigido aqui. Alinhado ao padrão `extrairJson()`, implantado (`npm run check` verde antes do deploy).
+- **Achado, não é bug:** `marketing_editar_nota_contexto` (RPC da Sprint 4/Onda 4) existe no banco mas não tem nenhum botão na tela — capacidade nunca ligada à UI. Registrado para decisão futura, não construído agora (seria escopo novo).
+- **Diagnóstico confirmado por SQL:** o erro 422 (`PROMPT_VAZIO`) ao gerar imagem a partir do prompt v1 de um briefing é porque essa versão foi criada às 16:23, antes do fix de `promptPara()` — seu `conteudo` tem os campos editoriais gerais, não `prompt_imagem`. Não precisa de correção; precisa gerar uma v2 (já com o fix) e testar de novo.
+- Varredura de enum-sem-cast (mesma classe da 0017) e de gatilho de auditoria sem limite de tamanho (mesma classe do insight) não encontrou nenhum outro caso — ambos os bugs originais já eram os únicos existentes no repo.
+
 ## Objetivo do produto
 
 Evoluir este repositório em uma ferramenta externa de marketing e inteligência de produto da ATOL, coexistindo com Sorteios no projeto Supabase **Sorteio**. O módulo de Marketing usa tabelas `marketing_*`, RLS por workspace, auditoria e não publica conteúdo automaticamente.
@@ -134,7 +143,7 @@ A 0020 foi aplicada nesta sessão (ver "Banco remoto confirmado" acima), a pedid
 
 ## Sequência obrigatória de validação
 
-1. Verificar o estado da árvore com `git status --short`; preservar o arquivo não rastreado do usuário `Apresentacao_Agente_Marketing_ATOL.html`.
+1. Verificar o estado da árvore com `git status --short`; preservar os arquivos não rastreados do usuário `Apresentacao_Agente_Marketing_ATOL.html` e `Apresentacao_Sistema_ATOL.html` (ambos decks de apresentação focados só no ATOL Studio, criado/ajustado em 2026-09-15, publicado também como Artifact).
 2. Revisar o diff local, sobretudo a estrutura de rotas em `app/src/main.tsx`.
 3. Rodar:
 

@@ -1,6 +1,6 @@
 // Gera estratégia e textos somente no servidor. A chave do provedor nunca chega ao navegador.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
-import { respostaCors, respostaJson } from '../_shared/ig.ts';
+import { extrairJson, respostaCors, respostaJson } from '../_shared/ig.ts';
 
 const OPERACOES = new Set(['ESTRATEGIA', 'ANGULO', 'LEGENDA', 'CTA', 'PROMPT_IMAGEM']);
 
@@ -141,7 +141,9 @@ Deno.serve(async (req) => {
         ],
         max_tokens: 1200,
         temperature: 0.5,
-        response_format: { type: 'json_object' },
+        // sem response_format: nao é suportado da mesma forma por todo modelo/provedor no
+        // OpenRouter (json_object/json_schema variam por endpoint) — a instrucao no prompt
+        // pedindo JSON puro já é suficiente e funciona com qualquer modelo.
       }),
     });
     const corpo = await resposta.json();
@@ -157,7 +159,14 @@ Deno.serve(async (req) => {
       erro.code = 'RESPOSTA_IA_INVALIDA';
       throw erro;
     }
-    const conteudo = JSON.parse(texto);
+    let conteudo: Record<string, unknown>;
+    try {
+      conteudo = extrairJson(texto);
+    } catch {
+      const erro = new Error('RESPOSTA_IA_INVALIDA') as Error & { code?: string };
+      erro.code = 'RESPOSTA_IA_INVALIDA';
+      throw erro;
+    }
     if (!conteudo || Array.isArray(conteudo) || typeof conteudo !== 'object') {
       const erro = new Error('RESPOSTA_IA_NAO_E_OBJETO') as Error & { code?: string };
       erro.code = 'RESPOSTA_IA_NAO_E_OBJETO';
