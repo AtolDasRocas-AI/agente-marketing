@@ -15,6 +15,10 @@ const approvalUrl = new URL('../supabase/migrations/0017_content_approval_workfl
 const sqlApproval = await readFile(fileURLToPath(approvalUrl), 'utf8');
 const instagramReadonlyUrl = new URL('../supabase/migrations/0018_marketing_instagram_readonly.sql', import.meta.url);
 const sqlInstagramReadonly = await readFile(fileURLToPath(instagramReadonlyUrl), 'utf8');
+const contextNotesUrl = new URL('../supabase/migrations/0019_marketing_context_notes.sql', import.meta.url);
+const sqlContextNotes = await readFile(fileURLToPath(contextNotesUrl), 'utf8');
+const googleOnlyAuthUrl = new URL('../supabase/migrations/0020_google_only_atol_auth.sql', import.meta.url);
+const sqlGoogleOnlyAuth = await readFile(fileURLToPath(googleOnlyAuthUrl), 'utf8');
 
 function exige(descricao, padrao) {
   assert.match(sql, padrao, `Migração 0013 sem garantia: ${descricao}`);
@@ -36,6 +40,10 @@ assert.equal(sqlApproval.trimStart().includes('begin;'), true, 'A 0017 deve inic
 assert.equal(sqlApproval.trimEnd().endsWith('commit;'), true, 'A 0017 deve finalizar a transação explicitamente.');
 assert.equal(sqlInstagramReadonly.trimStart().includes('begin;'), true, 'A 0018 deve iniciar uma transação explícita.');
 assert.equal(sqlInstagramReadonly.trimEnd().endsWith('commit;'), true, 'A 0018 deve finalizar a transação explicitamente.');
+assert.equal(sqlContextNotes.trimStart().includes('begin;'), true, 'A 0019 deve iniciar uma transação explícita.');
+assert.equal(sqlContextNotes.trimEnd().endsWith('commit;'), true, 'A 0019 deve finalizar a transação explicitamente.');
+assert.equal(sqlGoogleOnlyAuth.trimStart().includes('begin;'), true, 'A 0020 deve iniciar uma transação explícita.');
+assert.equal(sqlGoogleOnlyAuth.trimEnd().endsWith('commit;'), true, 'A 0020 deve finalizar a transação explicitamente.');
 assert.match(sqlHardening, /create unique index if not exists resultado_sorteio_id_uk/i);
 assert.match(sqlHardening, /marketing_criar_briefing_idempotente/i);
 assert.match(sqlHardening, /revoke delete on table public\.resultado/i);
@@ -51,6 +59,9 @@ assert.match(sqlApproval, /marketing_solicitar_aprovacao_conteudo/i);
 assert.match(sqlApproval, /marketing_decidir_aprovacao_conteudo/i);
 assert.match(sqlInstagramReadonly, /create table public\.marketing_instagram_connection/i);
 assert.match(sqlInstagramReadonly, /marketing_vincular_conta_instagram/i);
+assert.match(sqlContextNotes, /create table public\.marketing_context_note/i);
+assert.match(sqlContextNotes, /marketing_criar_nota_contexto/i);
+assert.match(sqlGoogleOnlyAuth, /hook_permitir_somente_google_atol/i);
 
 const tabelasRls0013 = [
   'marketing_workspace',
@@ -128,6 +139,7 @@ async function prepararSupabaseDescartavel(db) {
     create role anon nologin;
     create role authenticated nologin;
     create role service_role nologin bypassrls;
+    create role supabase_auth_admin nologin;
     create schema auth;
     create table auth.users (id uuid primary key);
     create function auth.uid()
@@ -168,6 +180,8 @@ try {
   await db.exec(sqlAiStrategyIndexes);
   await db.exec(sqlApproval);
   await db.exec(sqlInstagramReadonly);
+  await db.exec(sqlContextNotes);
+  await db.exec(sqlGoogleOnlyAuth);
 
   const endurecimento = await db.query(`
     select
@@ -726,7 +740,7 @@ try {
     '23514',
   );
 
-  console.log('Migrações 0013–0018: execução real e invariantes críticas verificadas no PostgreSQL descartável.');
+  console.log('Migrações 0013–0020: execução real e invariantes críticas verificadas no PostgreSQL descartável.');
 } finally {
   await db.close();
 }

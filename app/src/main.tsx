@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import './index.css';
 import { Layout } from './routes/Layout';
+import { AcessoAtol } from './features/auth/AcessoAtol';
 
 const router = createBrowserRouter([
   {
@@ -11,6 +12,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, lazy: async () => ({ Component: (await import('./routes/Home')).Home }) },
       { path: 'login', lazy: async () => ({ Component: (await import('./features/auth/Login')).Login }) },
+      { element: <AcessoAtol />, children: [
       { path: 'conectar', lazy: async () => ({ Component: (await import('./features/conta/ConectarConta')).ConectarConta }) },
       { path: 'auth/callback', lazy: async () => ({ Component: (await import('./features/conta/AuthCallback')).AuthCallback }) },
       { path: 'demo/roleta', lazy: async () => ({ Component: (await import('./routes/DemoRoleta')).DemoRoleta }) },
@@ -32,6 +34,7 @@ const router = createBrowserRouter([
           { path: 'relatorio', lazy: async () => ({ Component: (await import('./features/marketing/RelatorioSemanal')).RelatorioSemanalMarketing }) },
         ],
       },
+      ] },
     ],
   },
 ]);

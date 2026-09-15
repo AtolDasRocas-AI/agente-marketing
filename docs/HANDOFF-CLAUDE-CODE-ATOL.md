@@ -28,7 +28,9 @@ As migrações abaixo estão aplicadas no Supabase Sorteio:
 - `0018_marketing_instagram_readonly`
 - `0019_marketing_context_notes`
 
-**Atenção:** o arquivo local `supabase/migrations/0019_marketing_context_notes.sql` ainda não foi versionado, embora a migração já esteja aplicada remotamente. Ao retomar, valide que o arquivo local corresponde ao banco e registre-o no Git sem tentar reaplicá-lo.
+O arquivo local `supabase/migrations/0019_marketing_context_notes.sql` foi validado contra o banco e versionado nesta sessão — não precisa ser reaplicado.
+
+**Ainda não aplicada remotamente:** `0020_google_only_atol_auth` (cria `hook_permitir_somente_google_atol`). Passou em `npm run test:database` localmente e foi versionada nesta sessão, mas a aplicação no Supabase remoto e a ativação manual como **Before User Created Hook** continuam pendentes — decisão de aplicar ficou para depois.
 
 O banco de Marketing já possui:
 
@@ -49,29 +51,29 @@ O banco de Marketing já possui:
 - `e8ca169` métricas Instagram
 - `5970d1c` relatório semanal
 
-## Alterações locais pendentes — NÃO validadas, NÃO aplicadas e NÃO publicadas
+## Alterações validadas e versionadas nesta sessão — aplicação remota e ativação manual ainda pendentes
 
-Foram iniciadas, mas devem ser revisadas antes de prosseguir:
+Passaram por `npm run check` completo (segurança, migrações, testes, lint, build) e foram commitadas:
 
 - `supabase/migrations/0020_google_only_atol_auth.sql`
   - cria `public.hook_permitir_somente_google_atol(jsonb)`;
   - permite criar usuários apenas via Google e apenas para `atoldasrocas.ai@gmail.com`;
-  - ainda não foi aplicada remotamente;
-  - a ativação como **Before User Created Hook** exige ação manual no painel Supabase Auth.
+  - validada localmente (`npm run test:database`), **ainda não aplicada no Supabase remoto** — decisão de aplicar ficou para depois;
+  - a ativação como **Before User Created Hook** exige ação manual no painel Supabase Auth, mesmo depois de aplicada.
 - `app/src/features/auth/AcessoAtol.tsx`, `app/src/features/auth/Login.tsx` e `app/src/main.tsx`
-  - substituem login por senha por login Google e protegem as rotas da aplicação;
-  - ainda precisam de lint, build, testes e revisão de rotas.
+  - substituem login por senha por login Google e protegem quase todas as rotas da aplicação (inclusive as de Sorteio, não só Marketing) atrás do e-mail único `atoldasrocas.ai@gmail.com`;
+  - lint, build e testes passaram; havia um bug real de TypeScript (`supabase` possivelmente nulo dentro de um closure em `AcessoAtol.tsx`) corrigido nesta sessão;
+  - **atenção ao sequenciamento:** publicar este código no Vercel antes de configurar o provedor Google no painel Supabase Auth deixa a produção sem nenhum método de login funcional (a senha foi removida e o Google ainda não está habilitado).
 - `app/src/features/marketing/RelatorioSemanal.tsx`
-  - ganhou o formulário de notas de contexto;
-  - requer validação de UI e integração com a migração 0019.
+  - ganhou o formulário de notas de contexto, integrado com a migração 0019.
 - `supabase/migrations/0019_marketing_context_notes.sql`
-  - arquivo local correspondente a uma migração já aplicada remotamente; falta apenas validação e versionamento, não reaplicação.
+  - já aplicada remotamente antes desta sessão; arquivo local validado contra o banco e agora versionado.
 - `docs/agente-analista-instagram-atol.md`
   - especifica o agente analista em modo observação: postagens, Reels, carrosséis, comentários, marcações/menções, Stories quando a API permitir, métricas e correlação com notas.
 - `docs/ativacao-google-only-atol.md`
   - roteiro de ativação do Google-only no Supabase Auth.
 
-Não aplicar ou publicar esses arquivos sem passar a sequência de validação abaixo.
+Continua valendo: não aplicar a 0020 no Supabase remoto nem publicar no Vercel sem confirmação explícita de quem está conduzindo.
 
 ## Sequência obrigatória de validação
 
@@ -109,8 +111,13 @@ Não tentar adivinhar, criar ou registrar credenciais OAuth.
 
 - Reconectar `@atol.ia.oficial` aceitando a permissão de leitura de métricas; o código pede `instagram_business_manage_insights` e não pede publicação.
 - Publicar as Edge Functions locais `marketing-importar-metricas-instagram` e `marketing-gerar-conteudo` apenas após revisar o destino correto e configurar os segredos necessários.
-- Para IA: o responsável precisa configurar chave OpenRouter, modelo textual, modelo de imagem e custo estimado. Sem isso a geração deve continuar bloqueada.
-- Definir no aplicativo os limites mensal e por execução antes de qualquer chamada de IA.
+- Para IA: modelo e custo já decididos (`MARKETING_AI_TEXT_MODEL=openai/gpt-4o-mini`, `MARKETING_AI_ESTIMATED_COST_USD=0.02`). A chave OpenRouter foi fornecida pelo responsável nesta sessão, mas **ainda não foi configurada como secret no Supabase** — o ambiente do Claude Code não tem `supabase` CLI nem acesso a `.supabase-token`, então é preciso rodar manualmente (projeto `uakwbtmbhwifiekwmsbq`):
+  ```
+  supabase secrets set OPENROUTER_API_KEY=... MARKETING_AI_TEXT_MODEL=openai/gpt-4o-mini MARKETING_AI_ESTIMATED_COST_USD=0.02
+  ```
+  Sem isso a geração continua bloqueada (a function exige as três variáveis juntas, por design).
+- "Modelo de imagem", citado como pendência em versões anteriores deste documento, ainda não tem nenhum código que o consuma — não é bloqueio atual.
+- Definir no aplicativo os limites mensal e por execução antes de qualquer chamada de IA (o limite mensal fica em `marketing_ai_budget`, separado do teto por execução acima).
 - A rotação da senha que existiu no histórico Git continua deliberadamente adiada por decisão do responsável.
 
 ## Agente analista de Instagram — próxima implementação
