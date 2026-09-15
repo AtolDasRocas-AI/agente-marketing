@@ -66,7 +66,7 @@ Passaram por `npm run check` completo (segurança, migrações, testes, lint, bu
 - `app/src/features/auth/acesso.ts` (novo), `app/src/features/auth/AcessoAtol.tsx`, `app/src/features/auth/Login.tsx` e `app/src/main.tsx`
   - substituem login por senha por login Google e protegem quase todas as rotas da aplicação (inclusive as de Sorteio, não só Marketing) atrás da mesma lista de duas contas usada na migração 0020 (`EMAILS_PERMITIDOS` em `acesso.ts`);
   - lint, build e testes passaram; havia um bug real de TypeScript (`supabase` possivelmente nulo dentro de um closure em `AcessoAtol.tsx`) corrigido nesta sessão;
-  - **atenção ao sequenciamento:** publicar este código no Vercel antes de configurar o provedor Google no painel Supabase Auth deixa a produção sem nenhum método de login funcional (a senha foi removida e o Google ainda não está habilitado).
+  - **atenção ao sequenciamento (resolvida nesta sessão):** publicar este código no Vercel antes de configurar o provedor Google deixaria a produção sem login funcional — isso não é mais um risco, o checklist Google-only (seção abaixo) está completo: Google habilitado, hook ativo, Email/telefone sem signup novo, URL de produção configurada. Falta só decidir publicar no Vercel.
 - `app/src/features/marketing/RelatorioSemanal.tsx`
   - ganhou o formulário de notas de contexto, integrado com a migração 0019.
 - `supabase/migrations/0019_marketing_context_notes.sql`
@@ -101,14 +101,14 @@ A 0020 foi aplicada nesta sessão (ver "Banco remoto confirmado" acima), a pedid
 
 ### Google-only
 
-Migração 0020 já aplicada (função existe no banco). Checklist original de 4 passos no painel Supabase Auth:
+Migração 0020 já aplicada (função existe no banco). **Checklist de 4 passos completo nesta sessão:**
 
-1. habilitar Google e desabilitar Email, telefone e outros provedores — **ainda não feito**: `supabase config pull` (nesta sessão) mostrou `auth.email.enable_confirmations = true` e `auth.sms.twilio.enabled = true` remotamente, ou seja, Email e SMS/Twilio continuam habilitados;
-2. ~~inserir Client ID e Client Secret OAuth do Google~~ — **feito**, confirmado tanto pelo screenshot do responsável quanto pelo `config pull` (`auth.external.google.enabled = true`, client_id bate com o da captura);
+1. ~~habilitar Google e desabilitar Email, telefone e outros provedores~~ — **feito**: Google já estava ligado; `auth.email.enable_signup` mudado de `true` para `false` via `config push` (confirmado pela saída do comando no terminal do responsável); `auth.sms.enable_signup` já estava `false` remotamente (cadastro por telefone já era bloqueado antes desta sessão). O provedor Twilio em si continua ligado (`auth.sms.twilio.enabled = true`) mas deliberadamente não foi tocado — não é usado para signup, ver nota abaixo;
+2. ~~inserir Client ID e Client Secret OAuth do Google~~ — **feito**, confirmado pelo screenshot do responsável e pelo `config pull`;
 3. ~~selecionar `public.hook_permitir_somente_google_atol` como **Before User Created Hook**~~ — **feito nesta sessão**, ver abaixo;
-4. configurar a URL/redirect de produção para `https://app-one-fawn-32.vercel.app` — **ainda não feito**: `config pull` mostrou `auth.site_url = http://localhost:3000` e `auth.additional_redirect_urls = []` remotamente.
+4. ~~configurar a URL/redirect de produção~~ — **feito**: `site_url` agora `https://app-one-fawn-32.vercel.app`, `additional_redirect_urls` agora `["https://app-one-fawn-32.vercel.app/**"]` (confirmado pela saída do `config push` no terminal do responsável).
 
-Não tentar adivinhar, criar ou registrar credenciais OAuth.
+Não tentar adivinhar, criar ou registrar credenciais OAuth. Login local por Google (ex.: testar em `https://localhost:5173`) não está no allowlist de redirect — só foi adicionada a URL de produção; se precisar testar o fluxo Google localmente, adicionar `https://localhost:5173/**` a `additional_redirect_urls` primeiro.
 
 **Hook ativado nesta sessão via `supabase config push` (não pelo painel):**
 
