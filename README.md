@@ -77,10 +77,10 @@ isso o PNG sai com a serif de fallback do sistema).
 app/                    PWA React + TS + Vite
   src/lib/sorteio/      motores PUROS (regras, sorteio, motivos)
   src/lib/avatar/       avatares determinísticos e fita da roleta
-  src/features/         conta, sorteios, histórico
+  src/features/         conta, sorteios, histórico e marketing
 supabase/
-  migrations/           8 migrações (schema, RLS, funções, cron)
-  functions/            8 Edge Functions
+  migrations/           14 migrações (schema, RLS, funções, cron e marketing)
+  functions/            9 Edge Functions
   functions/_shared/    cópia dos motores para o Deno (gerada)
 verificador/            script público de verificação
 scripts/                operação e diagnóstico
@@ -96,6 +96,11 @@ cópias das Edge Functions divergirem.
 
 ## Scripts
 
+Os scripts que acessam o PostgreSQL exigem `SUPABASE_DB_URL` ou `DATABASE_URL` no
+ambiente. Use [.env.example](.env.example) como referência e nunca grave a senha no
+código. Migrações novas devem usar o histórico oficial do Supabase; os scripts locais
+não mantêm uma segunda tabela de controle.
+
 ```bash
 # fluxo completo pela linha de comando (alternativa à interface)
 node scripts/pipeline-local.mjs [link] --vencedores 3 --palavra "EU QUERO" --nova
@@ -107,7 +112,7 @@ node scripts/verificar-jobs.mjs                       # cron, token, respostas H
 node scripts/testar-refresh.mjs                       # prova o refresh automático
 
 # manutenção
-node scripts/configurar-cron.mjs                      # segredos + migrações + jobs
+node scripts/configurar-cron.mjs                      # segredos + conferência dos jobs
 node scripts/sincronizar-motores.mjs                  # motores → Edge Functions
 ```
 
@@ -139,9 +144,12 @@ node scripts/sincronizar-motores.mjs                  # motores → Edge Functio
 cd app
 npm install
 npm run dev      # https://localhost:5173 (cert self-signed em ../spike)
-npm test         # 68 testes
+npm test         # 94 testes
 npm run build
 ```
+
+Na raiz, `npm run check` executa varredura de segredos, testes das migrações,
+testes do frontend, lint e build de produção.
 
 O Meta exige HTTPS na Redirect URI, por isso o dev server usa TLS local.
 Antes de qualquer deploy, confirme que nenhum segredo entrou no bundle:

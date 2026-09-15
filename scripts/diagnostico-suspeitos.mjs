@@ -4,17 +4,13 @@
  *
  *   node scripts/diagnostico-suspeitos.mjs <SORTEIO_ID>
  */
-import pg from 'pg';
+import { criarClienteBanco } from './_database.mjs';
 import { classificar } from '../app/src/lib/sorteio/regras.ts';
 
 const sorteioId = process.argv[2];
 if (!sorteioId) { console.log('Uso: node scripts/diagnostico-suspeitos.mjs <SORTEIO_ID>'); process.exit(1); }
 
-const db = new pg.Client({
-  host: 'aws-0-sa-east-1.pooler.supabase.com', port: 5432,
-  user: 'postgres.uakwbtmbhwifiekwmsbq', database: 'postgres',
-  password: 'CavaloMarinho123!', ssl: { rejectUnauthorized: false },
-});
+const db = criarClienteBanco();
 await db.connect();
 
 const { rows: [s] } = await db.query('select * from sorteio where id = $1', [sorteioId]);

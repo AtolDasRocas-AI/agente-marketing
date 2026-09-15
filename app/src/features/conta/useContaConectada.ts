@@ -6,6 +6,7 @@ import { buscarContaConectada, type ContaConectada } from './api';
 export function useContaConectada() {
   const [conta, setConta] = useState<ContaConectada | null>(null);
   const [carregando, setCarregando] = useState(true);
+  const [instanteInicial] = useState(Date.now);
 
   useEffect(() => {
     let ativo = true;
@@ -34,7 +35,7 @@ export function useContaConectada() {
   }, []);
 
   const diasParaExpirar = conta
-    ? Math.floor((new Date(conta.token_expira_em).getTime() - Date.now()) / 86_400_000)
+    ? Math.floor((new Date(conta.token_expira_em).getTime() - instanteInicial) / 86_400_000)
     : null;
 
   return { conta, diasParaExpirar, carregando };

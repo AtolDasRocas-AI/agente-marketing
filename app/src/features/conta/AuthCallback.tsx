@@ -12,25 +12,25 @@ type Estado =
 /** Recebe o ?code do Instagram e conclui a troca de token via Edge Function */
 export function AuthCallback() {
   const [params] = useSearchParams();
-  const [estado, setEstado] = useState<Estado>({ fase: 'trocando' });
+  const code = params.get('code')?.replace(/#_$/, '') ?? null;
+  const erroCallback = params.get('error_description') || params.get('error');
+  const [estado, setEstado] = useState<Estado>(() =>
+    code
+      ? { fase: 'trocando' }
+      : { fase: 'erro', mensagem: erroCallback ?? 'Nenhum código recebido no callback.' }
+  );
   const executou = useRef(false); // code é de uso único — StrictMode não pode disparar 2x
 
   useEffect(() => {
-    if (executou.current) return;
+    if (!code || executou.current) return;
     executou.current = true;
 
-    const code = params.get('code');
-    const erro = params.get('error_description') || params.get('error');
-    if (!code) {
-      setEstado({ fase: 'erro', mensagem: erro ?? 'Nenhum código recebido no callback.' });
-      return;
-    }
-    concluirConexao(code.replace(/#_$/, ''))
+    concluirConexao(code)
       .then((conta) => setEstado({ fase: 'ok', username: conta.username }))
       .catch((err) =>
         setEstado({ fase: 'erro', mensagem: mensagemDeErro(err) })
       );
-  }, [params]);
+  }, [code]);
 
   return (
     <div className="sx-wrap--narrow">

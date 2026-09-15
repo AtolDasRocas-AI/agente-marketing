@@ -60,6 +60,10 @@ export function validarBriefing(dados: DadosBriefing, completo: boolean): Partia
   if (dados.titulo.trim().length > 180) {
     erros.titulo = 'Use no máximo 180 caracteres.';
   }
+  if (dados.objetivo.length > 4000) erros.objetivo = 'Use no máximo 4.000 caracteres.';
+  if (dados.publico.length > 1000) erros.publico = 'Use no máximo 1.000 caracteres.';
+  if (dados.pilar.length > 120) erros.pilar = 'Use no máximo 120 caracteres.';
+  if (dados.hipotese.length > 4000) erros.hipotese = 'Use no máximo 4.000 caracteres.';
 
   if (!completo) {
     if (!dados.titulo.trim()) erros.titulo = 'Dê um nome ao rascunho para salvá-lo.';
@@ -67,7 +71,7 @@ export function validarBriefing(dados: DadosBriefing, completo: boolean): Partia
   }
 
   for (const campo of CAMPOS_OBRIGATORIOS) {
-    if (!dados[campo].trim()) erros[campo] = 'Campo obrigatório.';
+    if (!dados[campo].trim() && !erros[campo]) erros[campo] = 'Campo obrigatório.';
   }
   return erros;
 }

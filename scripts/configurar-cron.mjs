@@ -1,15 +1,15 @@
 /**
- * Configura os segredos do Vault e aplica as migrações pendentes,
- * habilitando os jobs automáticos (AC-02 refresh de token, AC-16 expurgo).
+ * Configura os segredos do Vault e confere os jobs automáticos.
+ * Migrações são aplicadas exclusivamente pelo histórico oficial do Supabase.
  *
  * A service key é lida do CLI do Supabase e gravada direto no Vault —
  * nunca é impressa no terminal nem versionada.
  *
  *   node scripts/configurar-cron.mjs
  */
-import pg from 'pg';
+import { criarClienteBanco } from './_database.mjs';
 import { execSync } from 'node:child_process';
-import { readFileSync, readdirSync, existsSync, writeFileSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 
 const REF = 'uakwbtmbhwifiekwmsbq';
@@ -43,11 +43,7 @@ execSync(`npx supabase secrets set CRON_SECRET=${cronSecret} --project-ref ${REF
 });
 console.log('✅ CRON_SECRET configurado nas Edge Functions');
 
-const db = new pg.Client({
-  host: 'aws-0-sa-east-1.pooler.supabase.com', port: 5432,
-  user: `postgres.${REF}`, database: 'postgres',
-  password: 'CavaloMarinho123!', ssl: { rejectUnauthorized: false },
-});
+const db = criarClienteBanco();
 await db.connect();
 console.log('🔌 Conectado\n');
 
@@ -68,31 +64,7 @@ for (const [nome, valor] of [
   }
 }
 
-// ── 2. migrações pendentes ──
-const dir = `${RAIZ}supabase/migrations`;
-await db.query('create table if not exists _migracoes (nome text primary key, aplicada_em timestamptz default now())');
-const { rows: aplicadas } = await db.query('select nome from _migracoes');
-const jaAplicadas = new Set(aplicadas.map((r) => r.nome));
-
-console.log('');
-for (const nome of readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {
-  if (jaAplicadas.has(nome)) { console.log(`⏭️  ${nome}`); continue; }
-  const sql = readFileSync(`${dir}/${nome}`, 'utf8');
-  try {
-    await db.query('begin');
-    await db.query(sql);
-    await db.query('insert into _migracoes (nome) values ($1)', [nome]);
-    await db.query('commit');
-    console.log(`✅ ${nome} aplicada`);
-  } catch (e) {
-    await db.query('rollback');
-    console.error(`❌ ${nome}: ${e.message}`);
-    await db.end();
-    process.exit(1);
-  }
-}
-
-// ── 3. conferência ──
+// ── 2. conferência ──
 const { rows: jobs } = await db.query(
   'select jobname, schedule, active from cron.job order by jobname'
 );

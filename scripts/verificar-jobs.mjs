@@ -3,13 +3,9 @@
  *
  *   node scripts/verificar-jobs.mjs
  */
-import pg from 'pg';
+import { criarClienteBanco } from './_database.mjs';
 
-const db = new pg.Client({
-  host: 'aws-0-sa-east-1.pooler.supabase.com', port: 5432,
-  user: 'postgres.uakwbtmbhwifiekwmsbq', database: 'postgres',
-  password: 'CavaloMarinho123!', ssl: { rejectUnauthorized: false },
-});
+const db = criarClienteBanco();
 await db.connect();
 
 console.log('\n⏰ AGENDAMENTOS');

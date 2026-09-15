@@ -4,7 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "npm run test:security && npm run test:database && npm --prefix app test",
+    "test:security": "node scripts/test-secrets.mjs",
+    "test:database": "node scripts/test-marketing-migration.mjs",
+    "check": "npm test && npm --prefix app run lint && npm --prefix app run build"
   },
   "keywords": [],
   "author": "",
@@ -12,5 +15,8 @@
   "type": "commonjs",
   "dependencies": {
     "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8"
   }
 }
