@@ -10,9 +10,17 @@ Evoluir este repositório em uma ferramenta externa de marketing e inteligência
 
 ### Ambiente e publicação
 
-- Aplicação publicada em produção: `https://app-one-fawn-32.vercel.app`.
-- Último deploy Vercel confirmado: `dpl_Fa6dJQ22ovaCPxraRJaPxNKXe9En`.
+- Aplicação publicada em produção: `https://app-one-fawn-32.vercel.app`. Já contém a tela de login Google-only desta sessão — verificado no navegador em produção: `/login` mostra as duas contas autorizadas, e `/marketing/agenda` sem sessão redireciona para `/login`, sem erros no console.
+- Último deploy Vercel confirmado: `dpl_6Nx39ATm2So7DaYFyuxNaNWq5i22` (2026-09-15, substituiu `dpl_Fa6dJQ22ovaCPxraRJaPxNKXe9En`).
 - Projeto Vercel: equipe `atol-ai-s-projects`, projeto `app`.
+- **Como esse deploy foi feito (padrão do projeto — builds na Vercel demoram 6-10s porque não há build remoto, o app já sobe pré-buildado):**
+  ```
+  cd app
+  npx vercel pull --yes --environment production   # baixa .vercel/.env.production.local e project.json (nao versionados, no .gitignore)
+  npx vercel build --prod                          # build local, usa as env vars puxadas no passo acima
+  npx vercel deploy --prebuilt --prod              # sobe .vercel/output pronto, sem rebuildar na Vercel
+  ```
+  Vercel CLI já estava autenticado nesta máquina (mesma lógica do Supabase — sessão não é por-terminal). `vercel env ls production` mostrou "No Environment Variables found", o que é enganoso — `vercel pull` baixou normalmente; não confiar em `env ls` para decidir se as env vars existem.
 - Supabase correto: projeto **Sorteio**, ref `uakwbtmbhwifiekwmsbq`, URL `https://uakwbtmbhwifiekwmsbq.supabase.co`.
 - Nunca usar o projeto/ref antigo `ltrhsljnzuxoqyoodbfu`.
 - `npx supabase <comando> --project-ref uakwbtmbhwifiekwmsbq` funciona autenticado direto pelo Claude Code nesta máquina, depois que o responsável roda `supabase login` uma vez em qualquer terminal local (a sessão do CLI não é por-terminal). Foi assim que o deploy de `marketing-gerar-conteudo` (2026-09-15) foi feito. Continua valendo nunca ler `.supabase-token` deste repo — não foi e não é necessário para isso.
