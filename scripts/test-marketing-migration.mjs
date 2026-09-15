@@ -34,6 +34,8 @@ const sqlImagem = await readFile(fileURLToPath(imagemUrl), 'utf8');
 // 0027 (cron) não entra aqui: pg_cron/pg_net não existem no Postgres descartável do PGlite.
 const fixAprovacaoUrl = new URL('../supabase/migrations/0028_fix_aprovacao_status_cast.sql', import.meta.url);
 const sqlFixAprovacao = await readFile(fileURLToPath(fixAprovacaoUrl), 'utf8');
+const fixAuditoriaInsightUrl = new URL('../supabase/migrations/0029_fix_auditoria_insight.sql', import.meta.url);
+const sqlFixAuditoriaInsight = await readFile(fileURLToPath(fixAuditoriaInsightUrl), 'utf8');
 
 function exige(descricao, padrao) {
   assert.match(sql, padrao, `Migração 0013 sem garantia: ${descricao}`);
@@ -74,6 +76,9 @@ assert.equal(sqlImagem.trimEnd().endsWith('commit;'), true, 'A 0026 deve finaliz
 assert.equal(sqlFixAprovacao.trimStart().includes('begin;'), true, 'A 0028 deve iniciar uma transação explícita.');
 assert.equal(sqlFixAprovacao.trimEnd().endsWith('commit;'), true, 'A 0028 deve finalizar a transação explicitamente.');
 assert.match(sqlFixAprovacao, /::public\.marketing_content_status/i, 'A 0028 precisa converter o CASE para o enum antes de gravar em status.');
+assert.equal(sqlFixAuditoriaInsight.trimStart().includes('begin;'), true, 'A 0029 deve iniciar uma transação explícita.');
+assert.equal(sqlFixAuditoriaInsight.trimEnd().endsWith('commit;'), true, 'A 0029 deve finalizar a transação explicitamente.');
+assert.match(sqlFixAuditoriaInsight, /create function public\.marketing_auditar_insight/i);
 assert.match(sqlHardening, /create unique index if not exists resultado_sorteio_id_uk/i);
 assert.match(sqlHardening, /marketing_criar_briefing_idempotente/i);
 assert.match(sqlHardening, /revoke delete on table public\.resultado/i);
@@ -251,6 +256,7 @@ try {
   await db.exec(sqlInsight);
   await db.exec(sqlImagem);
   await db.exec(sqlFixAprovacao);
+  await db.exec(sqlFixAuditoriaInsight);
 
   const hookInstitucional = await db.query(
     'select public.hook_permitir_somente_google_atol($1::jsonb) as resultado',
@@ -934,13 +940,23 @@ try {
 
   await db.exec('reset role;');
   await como(db, 'service_role', '');
+  // Regressão do bug real 2026-09-15: entrada_resumida com volume realista (~150 posts,
+  // como uma conta de verdade acumula) — o gatilho de auditoria genérico duplicava isso
+  // em antes+depois e estourava o limite de 32KB de marketing_audit_event em todo UPDATE.
+  const entradaResumidaGrande = JSON.stringify({
+    periodo_inicio: '2026-09-01', periodo_fim: '2026-09-07', publicacoes: 150,
+    metricas_agregadas: Array.from({ length: 150 }, (_, i) => ({
+      data_publicacao: '2026-09-01', link: `https://instagram.com/p/teste${i}`,
+      tipo: 'IMAGE', likes: i, comentarios: i,
+    })),
+  });
   const insight = await db.query(
     `insert into public.marketing_insight (
       workspace_id, ai_run_id, periodo_inicio, periodo_fim, entrada_resumida,
       hipotese, evidencias, limitacoes, confianca, proxima_acao, custo_usd, modelo_ia
-    ) values ($1, $2, '2026-09-01', '2026-09-07', '{}'::jsonb, 'Hipótese de teste', '[]'::jsonb, '', 'BAIXA', '', 0.01, 'modelo-teste')
+    ) values ($1, $2, '2026-09-01', '2026-09-07', $3::jsonb, 'Hipótese de teste', '[]'::jsonb, '', 'BAIXA', '', 0.01, 'modelo-teste')
     returning *`,
-    [workspaceIdA, livreIniciada.rows[0].id],
+    [workspaceIdA, livreIniciada.rows[0].id, entradaResumidaGrande],
   );
   const insightId = insight.rows[0].id;
   assert.equal(insight.rows[0].decisao, 'PENDENTE', 'A hipótese deveria nascer pendente.');
