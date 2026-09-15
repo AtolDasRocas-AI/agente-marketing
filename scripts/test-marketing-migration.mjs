@@ -31,6 +31,9 @@ const insightUrl = new URL('../supabase/migrations/0025_marketing_insight.sql', 
 const sqlInsight = await readFile(fileURLToPath(insightUrl), 'utf8');
 const imagemUrl = new URL('../supabase/migrations/0026_marketing_image_generation.sql', import.meta.url);
 const sqlImagem = await readFile(fileURLToPath(imagemUrl), 'utf8');
+// 0027 (cron) não entra aqui: pg_cron/pg_net não existem no Postgres descartável do PGlite.
+const fixAprovacaoUrl = new URL('../supabase/migrations/0028_fix_aprovacao_status_cast.sql', import.meta.url);
+const sqlFixAprovacao = await readFile(fileURLToPath(fixAprovacaoUrl), 'utf8');
 
 function exige(descricao, padrao) {
   assert.match(sql, padrao, `Migração 0013 sem garantia: ${descricao}`);
@@ -68,6 +71,9 @@ assert.equal(sqlInsight.trimStart().includes('begin;'), true, 'A 0025 deve inici
 assert.equal(sqlInsight.trimEnd().endsWith('commit;'), true, 'A 0025 deve finalizar a transação explicitamente.');
 assert.equal(sqlImagem.trimStart().includes('begin;'), true, 'A 0026 deve iniciar uma transação explícita.');
 assert.equal(sqlImagem.trimEnd().endsWith('commit;'), true, 'A 0026 deve finalizar a transação explicitamente.');
+assert.equal(sqlFixAprovacao.trimStart().includes('begin;'), true, 'A 0028 deve iniciar uma transação explícita.');
+assert.equal(sqlFixAprovacao.trimEnd().endsWith('commit;'), true, 'A 0028 deve finalizar a transação explicitamente.');
+assert.match(sqlFixAprovacao, /::public\.marketing_content_status/i, 'A 0028 precisa converter o CASE para o enum antes de gravar em status.');
 assert.match(sqlHardening, /create unique index if not exists resultado_sorteio_id_uk/i);
 assert.match(sqlHardening, /marketing_criar_briefing_idempotente/i);
 assert.match(sqlHardening, /revoke delete on table public\.resultado/i);
@@ -244,6 +250,7 @@ try {
   await db.exec(sqlNotaEdicao);
   await db.exec(sqlInsight);
   await db.exec(sqlImagem);
+  await db.exec(sqlFixAprovacao);
 
   const hookInstitucional = await db.query(
     'select public.hook_permitir_somente_google_atol($1::jsonb) as resultado',
@@ -858,6 +865,31 @@ try {
 
   await db.exec('reset role;');
   await como(db, 'authenticated', usuarioA);
+
+  // Regressão do bug real 2026-09-15: a CASE atribuída a `status` sem cast para o enum
+  // marketing_content_status fazia TODA decisão de aprovação falhar com 42804 em produção.
+  const solicitacao = await db.query(
+    'select * from public.marketing_solicitar_aprovacao_conteudo($1, $2, $3, $4)',
+    [workspaceIdA, briefingId, versaoIa.rows[0].id, ''],
+  );
+  const aprovacaoId = solicitacao.rows[0].id;
+
+  const decisaoAprovada = await db.query(
+    'select * from public.marketing_decidir_aprovacao_conteudo($1, $2, true, $3)',
+    [workspaceIdA, aprovacaoId, ''],
+  );
+  assert.equal(decisaoAprovada.rows[0].decisao, 'APROVADO', 'A aprovação não foi registrada.');
+
+  const itemAprovado = await db.query(
+    'select status from public.marketing_content_item where id = $1',
+    [briefingId],
+  );
+  assert.equal(
+    itemAprovado.rows[0].status,
+    'APROVADO',
+    'O briefing deveria virar APROVADO depois da decisão — este é o bug real de 2026-09-15 (42804 sem cast de enum).',
+  );
+
   const notaChave = 'dededede-dede-4ded-8ded-dededededede';
   const nota = await db.query(
     `select * from public.marketing_criar_nota_contexto($1, $2, $3, 'EVENTO', $4, $5)`,
