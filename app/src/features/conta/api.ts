@@ -22,7 +22,8 @@ export async function buscarContaConectada(): Promise<ContaConectada | null> {
 export function urlAutorizacaoInstagram(): string {
   const appId = import.meta.env.VITE_IG_APP_ID as string;
   const redirect = import.meta.env.VITE_IG_REDIRECT_URI as string;
-  const scopes = 'instagram_business_basic,instagram_business_manage_comments';
+  // Leitura de métricas para o ATOL Studio; não inclui permissão de publicação.
+  const scopes = 'instagram_business_basic,instagram_business_manage_comments,instagram_business_manage_insights';
   return (
     `https://www.instagram.com/oauth/authorize` +
     `?client_id=${appId}` +
