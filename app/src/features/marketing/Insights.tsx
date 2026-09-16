@@ -4,9 +4,14 @@ import { exigirSupabase } from '../../lib/supabase';
 import { mensagemDeErroFuncao } from '../../lib/erro';
 import { obterRepositorioMarketingRemoto, type WorkspaceMarketing } from './repositoryRemote';
 
+interface EntradaResumida {
+  publicacoes?: number;
+  alcance_conta?: { ultimos_7_dias?: number; sete_dias_anteriores?: number | null; mediana_ultimas_semanas?: number | null };
+}
 interface Insight {
   id: string; periodo_inicio: string; periodo_fim: string; hipotese: string; evidencias: string[];
   limitacoes: string; confianca: string; proxima_acao: string; custo_usd: number | null; modelo_ia: string; decisao: string;
+  entrada_resumida: EntradaResumida | null;
 }
 
 const ROTULOS_CONFIANCA: Record<string, string> = { BAIXA: 'Confiança baixa', MEDIA: 'Confiança média', ALTA: 'Confiança alta' };
@@ -20,7 +25,7 @@ export function InsightsMarketing() {
     const repo = obterRepositorioMarketingRemoto(); const ws = await repo.preparar();
     const { data, error } = await exigirSupabase()
       .from('marketing_insight')
-      .select('id,periodo_inicio,periodo_fim,hipotese,evidencias,limitacoes,confianca,proxima_acao,custo_usd,modelo_ia,decisao')
+      .select('id,periodo_inicio,periodo_fim,hipotese,evidencias,limitacoes,confianca,proxima_acao,custo_usd,modelo_ia,decisao,entrada_resumida')
       .eq('workspace_id', ws.id).order('gerado_em', { ascending: false }).limit(20);
     if (error) throw error;
     setWorkspace(ws); setInsights((data ?? []) as Insight[]);
@@ -65,7 +70,12 @@ export function InsightsMarketing() {
           {i.evidencias?.length > 0 && <ul className="sx-hint">{i.evidencias.map((e, idx) => <li key={idx}>{e}</li>)}</ul>}
           {i.limitacoes && <p className="sx-hint">Limitações: {i.limitacoes}</p>}
           {i.proxima_acao && <p className="sx-hint">Próxima ação sugerida: {i.proxima_acao}</p>}
-          <p className="sx-hint">Modelo {i.modelo_ia} · custo {i.custo_usd != null ? `US$ ${Number(i.custo_usd).toFixed(4)}` : '—'}</p>
+          <p className="sx-hint">Modelo {i.modelo_ia} · custo {i.custo_usd != null ? `US$ ${Number(i.custo_usd).toFixed(4)}` : '—'} · confiança calculada pelo sistema, não pelo modelo</p>
+          {i.entrada_resumida && <details className="sx-hint" style={{ marginTop: 4 }}>
+            <summary>Ver pacote de evidências</summary>
+            <p>Publicações no período: {i.entrada_resumida.publicacoes ?? '—'}</p>
+            <p>Alcance de conta: {i.entrada_resumida.alcance_conta?.ultimos_7_dias ?? '—'} nos últimos 7 dias · {i.entrada_resumida.alcance_conta?.sete_dias_anteriores ?? '—'} nos 7 anteriores · mediana {i.entrada_resumida.alcance_conta?.mediana_ultimas_semanas ?? '—'}</p>
+          </details>}
           {i.decisao === 'PENDENTE'
             ? <div className="sx-actions"><button className="sx-btn sx-btn--primary" type="button" onClick={() => void decidir(i.id, true)}>Aprovar</button><button className="sx-btn sx-btn--ghost" type="button" onClick={() => void decidir(i.id, false)}>Descartar</button></div>
             : <span className={i.decisao === 'APROVADO' ? 'sx-tag sx-tag--ok' : 'sx-tag sx-tag--out'}>{i.decisao === 'APROVADO' ? 'Aprovada' : 'Descartada'}</span>}

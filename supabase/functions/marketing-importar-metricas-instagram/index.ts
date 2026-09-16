@@ -18,18 +18,107 @@ function mapearTipoErro(erro: ErroGraphApi | undefined): TipoErroImportacao {
   return 'ERRO_DESCONHECIDO';
 }
 
+// Matriz de métricas de insight por media_product_type (Onda 2), validada ao vivo em
+// 15-16/09/2026 contra developers.facebook.com/documentation/instagram-platform/reference/
+// instagram-media/insights (atualizada 11/09/2026) — só métricas confirmadas para
+// Instagram API com Login do Instagram (graph.instagram.com, o host usado neste projeto).
+// De fora de propósito: total_likes/total_comments/total_views (só Login do Facebook) e
+// impressions (obsoleta para mídia criada após 02/07/2024 — todo conteúdo novo daqui em
+// diante). STORY não entra: GET /{ig-user-id}/stories, a única forma documentada de listar
+// stories, exige Login do Facebook nesta mesma documentação — sem forma confirmada de
+// descobrir stories via Login do Instagram (ver bloqueio registrado no spec-kit).
+const METRICAS_POR_TIPO_PRODUTO: Record<string, string[]> = {
+  FEED: ['likes', 'comments', 'reach', 'saved', 'shares', 'total_interactions', 'views'],
+  REELS: ['likes', 'comments', 'reach', 'saved', 'shares', 'total_interactions', 'views', 'ig_reels_avg_watch_time'],
+};
+
+// Métricas de conta confirmadas para os dois tipos de login em developers.facebook.com/
+// documentation/instagram-platform/api-reference/instagram-user/insights (atualizada 16/06/2026).
+const METRICAS_CONTA = [
+  'reach', 'views', 'likes', 'comments', 'saved', 'shares', 'total_interactions',
+  'accounts_engaged', 'profile_links_taps', 'follows_and_unfollows',
+];
+
+interface ItemInsight { name?: string; values?: Array<{ value?: number }>; total_value?: { value?: number } }
+
+function extrairValor(item: ItemInsight): number | undefined {
+  const valor = item.total_value?.value ?? item.values?.[0]?.value;
+  return typeof valor === 'number' ? valor : undefined;
+}
+
+/**
+ * Busca insights de uma mídia; nunca lança. Uma métrica ausente na resposta (mídia sem
+ * dado suficiente, métrica não aplicável etc.) simplesmente não entra no objeto — nunca
+ * vira zero — e uma falha na chamada não derruba a importação dos campos básicos do post.
+ */
+async function buscarInsightsMedia(mediaId: string, tipoProduto: string | null, token: string): Promise<Record<string, number>> {
+  const metricas = tipoProduto ? METRICAS_POR_TIPO_PRODUTO[tipoProduto] : undefined;
+  if (!metricas || metricas.length === 0) return {};
+  try {
+    const resposta = await fetch(`${GRAPH}/${mediaId}/insights?metric=${metricas.join(',')}&access_token=${encodeURIComponent(token)}`);
+    const corpo = await resposta.json();
+    if (!resposta.ok) return {};
+    const valores: Record<string, number> = {};
+    for (const item of (corpo?.data ?? []) as ItemInsight[]) {
+      const valor = extrairValor(item);
+      if (typeof item.name === 'string' && valor !== undefined) valores[item.name] = valor;
+    }
+    return valores;
+  } catch {
+    return {};
+  }
+}
+
+/** Insights diários de conta + contagem de seguidores; nunca lança — falha aqui não deve derrubar a importação de posts. */
+async function buscarInsightsConta(igUserId: string, token: string): Promise<{ metricas: Record<string, number>; seguidores: number | null }> {
+  const metricas: Record<string, number> = {};
+  try {
+    const resposta = await fetch(
+      `${GRAPH}/${igUserId}/insights?metric=${METRICAS_CONTA.join(',')}&period=day&metric_type=total_value&access_token=${encodeURIComponent(token)}`,
+    );
+    const corpo = await resposta.json();
+    if (resposta.ok) {
+      for (const item of (corpo?.data ?? []) as ItemInsight[]) {
+        const valor = extrairValor(item);
+        if (typeof item.name === 'string' && valor !== undefined) metricas[item.name] = valor;
+      }
+    }
+  } catch { /* segue sem métricas de conta */ }
+
+  let seguidores: number | null = null;
+  try {
+    const resposta = await fetch(`${GRAPH}/${igUserId}?fields=followers_count&access_token=${encodeURIComponent(token)}`);
+    const corpo = await resposta.json();
+    if (resposta.ok && typeof corpo?.followers_count === 'number') seguidores = corpo.followers_count;
+  } catch { /* segue sem contagem de seguidores */ }
+
+  return { metricas, seguidores };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return respostaCors();
   if (req.method !== 'POST') return respostaJson({ codigo: 'METODO_NAO_PERMITIDO' }, 405);
-  const authorization = req.headers.get('Authorization') ?? '';
-  const auth = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
-    global: { headers: { Authorization: authorization } },
-  });
-  const { data: userData } = await auth.auth.getUser();
-  const user = userData.user;
-  if (!user) return respostaJson({ codigo: 'NAO_AUTENTICADO' }, 401);
+
+  // Duas origens de chamada: o clique humano em "Importar métricas agora" (sessão de
+  // usuário, verificada por auth.getUser()) e o cron diário (sem sessão nenhuma — só o
+  // segredo dedicado, mesmo padrão de lgpd-expurgo-marketing). O cron nunca informa um
+  // workspace_id arbitrário: quem escolhe os workspaces é marketing_cron_importar_
+  // metricas_instagram() no banco, lendo direto de marketing_instagram_connection.
+  const cronSecret = Deno.env.get('CRON_SECRET');
+  const ehChamadaCron = Boolean(cronSecret) && req.headers.get('x-cron-secret') === cronSecret;
 
   const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+  const leitor = ehChamadaCron
+    ? admin
+    : createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
+        global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } },
+      });
+
+  if (!ehChamadaCron) {
+    const { data: userData } = await leitor.auth.getUser();
+    if (!userData.user) return respostaJson({ codigo: 'NAO_AUTENTICADO' }, 401);
+  }
+
   let runId: string | null = null;
 
   async function encerrarComErro(tipoErro: TipoErroImportacao, mensagem: string, processados = 0, cursor: string | null = null) {
@@ -43,12 +132,12 @@ Deno.serve(async (req) => {
   try {
     const { workspace_id: workspaceId } = await req.json() as { workspace_id?: string };
     if (!workspaceId) return respostaJson({ codigo: 'PEDIDO_INVALIDO' }, 400);
-    const { data: connection, error: connectionError } = await auth
+    const { data: connection, error: connectionError } = await leitor
       .from('marketing_instagram_connection')
       .select('id,ig_account_id,username').eq('workspace_id', workspaceId).maybeSingle();
     if (connectionError) throw connectionError;
     if (!connection) return respostaJson({ codigo: 'CONTA_NAO_VINCULADA' }, 422);
-    const { data: account, error: accountError } = await auth
+    const { data: account, error: accountError } = await leitor
       .from('ig_account').select('id,ig_user_id').eq('id', connection.ig_account_id).maybeSingle();
     if (accountError) throw accountError;
     if (!account) return respostaJson({ codigo: 'CONTA_NAO_DISPONIVEL' }, 403);
@@ -69,7 +158,7 @@ Deno.serve(async (req) => {
     // media_url/thumbnail_url servem de capa na tela; expiram como qualquer URL da CDN do
     // Instagram, por isso o frontend (CapaPost) sempre tem fallback para ícone + rótulo.
     const campos =
-      'id,permalink,media_type,timestamp,like_count,comments_count,media_url,thumbnail_url,' +
+      'id,permalink,media_type,media_product_type,timestamp,like_count,comments_count,media_url,thumbnail_url,' +
       'children{media_url,thumbnail_url,media_type}';
     let url: string | null =
       `${GRAPH}/${account.ig_user_id}/media?fields=${campos}&limit=${LIMITE_PAGINA}&access_token=${encodeURIComponent(token)}`;
@@ -88,7 +177,26 @@ Deno.serve(async (req) => {
         return respostaJson({ codigo: tipoErro, detalhe: body?.error?.message }, 502);
       }
 
-      const linhas = (body?.data ?? []).map((media: Record<string, unknown>) => ({
+      const itens = (body?.data ?? []) as Record<string, unknown>[];
+
+      const midias = itens.map((media) => ({
+        workspace_id: workspaceId, connection_id: connection.id, ig_media_id: String(media.id),
+        media_type: typeof media.media_type === 'string' ? media.media_type : null,
+        permalink: typeof media.permalink === 'string' ? media.permalink : null,
+        publicado_em: typeof media.timestamp === 'string' ? media.timestamp : null,
+      }));
+
+      // Um insight por mídia (custo aceitável no volume desta conta); mídia sem
+      // media_product_type reconhecido ou sem insight disponível não falha o lote.
+      const insightsPorMidia = await Promise.all(itens.map((media) =>
+        buscarInsightsMedia(
+          String(media.id),
+          typeof media.media_product_type === 'string' ? media.media_product_type : null,
+          token,
+        ),
+      ));
+
+      const linhas = itens.map((media, indice) => ({
         workspace_id: workspaceId, connection_id: connection.id, ig_media_id: String(media.id),
         permalink: typeof media.permalink === 'string' ? media.permalink : null,
         media_type: typeof media.media_type === 'string' ? media.media_type : null,
@@ -98,9 +206,19 @@ Deno.serve(async (req) => {
           media_url: typeof media.media_url === 'string' ? media.media_url : null,
           thumbnail_url: typeof media.thumbnail_url === 'string' ? media.thumbnail_url : null,
           children: media.children ?? null,
+          ...insightsPorMidia[indice],
         },
         coletado_em: coletadoEm,
       }));
+
+      // A dimensão precisa existir antes do fato: marketing_instagram_metric_snapshot
+      // tem FK para marketing_instagram_media desde a correção de dupla contagem (0030).
+      if (midias.length) {
+        const { error: mediaError } = await admin
+          .from('marketing_instagram_media')
+          .upsert(midias, { onConflict: 'workspace_id,ig_media_id' });
+        if (mediaError) throw mediaError;
+      }
 
       if (linhas.length) {
         const { error: upsertError } = await admin
@@ -114,6 +232,16 @@ Deno.serve(async (req) => {
       url = body.paging?.next ?? null;
       paginas++;
     }
+
+    // Série diária de conta — upsert por dia (nunca acumula várias linhas por dia, ao
+    // contrário do fato de mídia); falha aqui não derruba a importação de posts já feita.
+    const hoje = new Date().toISOString().slice(0, 10);
+    const { metricas: metricasConta, seguidores } = await buscarInsightsConta(account.ig_user_id, token);
+    const { error: contaError } = await admin.from('marketing_instagram_account_metric_daily').upsert({
+      workspace_id: workspaceId, connection_id: connection.id, data: hoje,
+      seguidores, metricas: metricasConta, coletado_em: new Date().toISOString(),
+    }, { onConflict: 'workspace_id,data' });
+    if (contaError) console.error('marketing-importar-metricas-instagram (conta):', contaError.message);
 
     const concluido = !url;
     await admin.from('marketing_instagram_import_run').update({

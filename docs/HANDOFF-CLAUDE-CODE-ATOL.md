@@ -1,6 +1,28 @@
 # Handoff — ATOL Studio para Claude Code
 
-Atualizado em 15/09/2026. Este documento separa fatos confirmados de alterações locais ainda não validadas. Não exponha, copie ou versione arquivos de segredo.
+Atualizado em 16/09/2026. Este documento separa fatos confirmados de alterações locais ainda não validadas. Não exponha, copie ou versione arquivos de segredo.
+
+## Spec-kit `atol-analise-instagram-avancada` concluído e aplicado (2026-09-15/16, `spec-kits/atol-analise-instagram-avancada.spec-kit.md`, status `done`)
+
+As 5 ondas foram implementadas, validadas localmente (`npm run check` verde a cada onda — segurança, migrações PGlite, 101 testes de frontend, lint, build) **e aplicadas/implantadas remotamente** (diferente do handoff das Sprints A–F abaixo, que ficou só local). Resumo:
+
+- **Onda 1 (integridade):** corrigido o bug real de dupla contagem — `marketing_instagram_metric_snapshot` grava uma linha nova a cada reimportação (chave inclui `coletado_em`); o relatório e o insight somavam todas as linhas do período em vez da última observação por mídia. `0030_marketing_instagram_media_dimension.sql` separa identidade (`marketing_instagram_media`, dimensão) de observação (fato, sem mudar), com backfill, FK nova, e as funções `marketing_instagram_ultimo_snapshot`/`marketing_instagram_delta_snapshot` (deduplicadas, nunca somam linhas). `MetricasInstagram.tsx`, `RelatorioSemanal.tsx` e `marketing-gerar-insight` reescritos para usar essas funções.
+- **Onda 2 (insights de post + conta):** `marketing-importar-metricas-instagram` passou a chamar `/insights` por mídia (matriz de métricas validada ao vivo contra a doc da Meta em 15-16/09/2026 — chave certa é `media_product_type`, FEED/REELS, não `media_type`) e `/insights` de conta + `followers_count`. Nova tabela `0031_marketing_instagram_account_daily.sql` (série diária, upsert por dia). Cron novo `importar-metricas-marketing` (`0032`, 03:20 UTC). A function aceita chamada via `x-cron-secret` além de sessão de usuário (implantada com `--no-verify-jwt`, mesmo padrão de `lgpd-expurgo-marketing`). **Stories ficou fora** — investigado ao vivo e descartado em definitivo (ver seção própria abaixo).
+- **Onda 3 (painel visual):** `GraficoLinha.tsx`/`GraficoBarras.tsx` (SVG artesanal, zero dependência nova — confirmado no bundle). `MetricasInstagram.tsx` ganhou gráfico de tendência de alcance, comparação por formato (Imagem/Vídeo-Reels/Carrossel) e por dia da semana, e cada post mostra alcance/visualizações/salvamentos/compartilhamentos com "não disponível" explícito.
+- **Onda 4 (relatório/insight confiáveis):** lógica de tendência extraída pra `app/src/features/marketing/tendenciaConta.ts` (testada, 7 casos) e reaproveitada por Métricas e Relatório; `marketing-gerar-insight` ganhou uma cópia (Deno não importa módulo do navegador) com o mesmo comentário cruzando as duas. Pacote de evidências não manda mais `media_url`/`children` pro modelo. Confiança do insight é calculada por regra no servidor (poucas publicações ou sem semana anterior → BAIXA) e **sempre sobrescrita** no código, nunca decidida pelo modelo.
+- **Onda 5 (análise por post):** nova tabela `0033_marketing_instagram_post_analysis.sql` (versionada, append-only) e function `marketing-analisar-post-instagram` (nova). Cron `0034` (`analisar-posts-marketing`, 03:35 UTC) — **não estava no desenho original do spec-kit**, precisou ser acrescentado porque nada dispararia a análise automática sem ele. `solicitado_por` no modo automático usa o administrador do workspace (`marketing_ai_run` exige usuário real). Botão "Analisar"/"Reanalisar" em `MetricasInstagram.tsx`.
+
+**Aplicado remotamente nesta sessão, com autorização do responsável a cada passo:** migrações `0030`–`0034` (via `supabase db query --linked --file`, nunca `db push`); functions `marketing-importar-metricas-instagram`, `marketing-gerar-insight`, `marketing-analisar-post-instagram` implantadas. Todos os 6 cron jobs confirmados ativos em `cron.job`.
+
+**Pendente do responsável:**
+1. `MARKETING_AI_POST_ANALYSIS_MODEL` / `MARKETING_AI_POST_ANALYSIS_ESTIMATED_COST_USD` — sem esses dois secrets, `marketing-analisar-post-instagram` responde `CONFIGURACAO_IA_AUSENTE`. Sugestão: `google/gemini-2.5-flash-lite` (já validado para comentários), mas revalidar preço/disponibilidade ao vivo em openrouter.ai/models antes de fixar.
+2. Publicar esta leva de mudanças de frontend no Vercel — combinado que ficaria pendente de confirmação explícita, ainda não pedida.
+3. Validação com dado real do Instagram (visualizações, alcance, tempo de exibição de Reels, crescimento de conta) segue bloqueada pela reconexão de `@atol.ia.oficial`, mesma pendência já registrada abaixo.
+4. Recorrência (3ª vez nesta sessão) do problema de troca de conta do CLI do Supabase — ver [[project-atol-marketing]] na memória do Claude Code; recomendação de `SUPABASE_ACCESS_TOKEN` persistente segue de pé.
+
+### Stories via Login do Instagram — investigado e descartado em definitivo (2026-09-15)
+
+Ver detalhe completo, com fontes e datas de cada página da Meta consultada, em `spec-kits/atol-analise-instagram-avancada.spec-kit.md` (Seção 4 e CAP-15) e na seção "Agente analista de Instagram" mais abaixo neste documento. Resumo: não há via alternativa via Login do Instagram (`graph.instagram.com`) para ler Stories hoje — nem listagem, nem mistura no `/media`, nem webhook. Não reabrir sem mudança documentada pela própria Meta.
 
 ## Sprints A–F implementadas localmente (2026-09-15, spec-kit `spec-kits/atol-studio-continuacao.spec-kit.md`)
 
@@ -218,6 +240,8 @@ O documento `docs/agente-analista-instagram-atol.md` é a referência. Implement
 3. incluir marcações, menções e Stories somente se as permissões e limites atuais da API permitirem;
 4. correlacionar métricas com `marketing_context_note` sem alegar causalidade;
 5. gerar hipóteses revisáveis para briefs, com custos e aprovação humana.
+
+**Stories via Login do Instagram — investigado e descartado em definitivo (2026-09-15):** para o item 3 acima, a resposta é não. Revalidação ao vivo da documentação oficial da Meta confirmou que não existe via alternativa via Login do Instagram (`graph.instagram.com`) para ler Stories: `GET /{ig-user-id}/stories` (listagem) exige Login do Facebook; `GET /{ig-user-id}/media` (o endpoint que este projeto já usa) declara explicitamente que Stories não aparecem nessa listagem, em nenhum login; e o único campo de webhook relacionado (`story_insights`) é marcado indisponível para Login do Instagram. O único achado novo — `GET /{ig-media-id}/insights` aceita Login do Instagram e tem métricas de STORY — só serviria se este projeto passasse a publicar a própria story pela API (mudança de escopo, contraria a política de nunca publicar automaticamente; não construir sem decisão explícita). Detalhe completo, com fontes e datas, em `spec-kits/atol-analise-instagram-avancada.spec-kit.md` (Seção 4 e CAP-15).
 
 ## Regras de segurança
 

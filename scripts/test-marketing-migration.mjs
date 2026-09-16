@@ -36,6 +36,13 @@ const fixAprovacaoUrl = new URL('../supabase/migrations/0028_fix_aprovacao_statu
 const sqlFixAprovacao = await readFile(fileURLToPath(fixAprovacaoUrl), 'utf8');
 const fixAuditoriaInsightUrl = new URL('../supabase/migrations/0029_fix_auditoria_insight.sql', import.meta.url);
 const sqlFixAuditoriaInsight = await readFile(fileURLToPath(fixAuditoriaInsightUrl), 'utf8');
+const mediaDimensionUrl = new URL('../supabase/migrations/0030_marketing_instagram_media_dimension.sql', import.meta.url);
+const sqlMediaDimension = await readFile(fileURLToPath(mediaDimensionUrl), 'utf8');
+const accountDailyUrl = new URL('../supabase/migrations/0031_marketing_instagram_account_daily.sql', import.meta.url);
+const sqlAccountDaily = await readFile(fileURLToPath(accountDailyUrl), 'utf8');
+// 0032 e 0034 (cron) não entram aqui: pg_cron/pg_net não existem no Postgres descartável do PGlite.
+const postAnalysisUrl = new URL('../supabase/migrations/0033_marketing_instagram_post_analysis.sql', import.meta.url);
+const sqlPostAnalysis = await readFile(fileURLToPath(postAnalysisUrl), 'utf8');
 
 function exige(descricao, padrao) {
   assert.match(sql, padrao, `Migração 0013 sem garantia: ${descricao}`);
@@ -79,6 +86,21 @@ assert.match(sqlFixAprovacao, /::public\.marketing_content_status/i, 'A 0028 pre
 assert.equal(sqlFixAuditoriaInsight.trimStart().includes('begin;'), true, 'A 0029 deve iniciar uma transação explícita.');
 assert.equal(sqlFixAuditoriaInsight.trimEnd().endsWith('commit;'), true, 'A 0029 deve finalizar a transação explicitamente.');
 assert.match(sqlFixAuditoriaInsight, /create function public\.marketing_auditar_insight/i);
+assert.equal(sqlMediaDimension.trimStart().includes('begin;'), true, 'A 0030 deve iniciar uma transação explícita.');
+assert.equal(sqlMediaDimension.trimEnd().endsWith('commit;'), true, 'A 0030 deve finalizar a transação explicitamente.');
+assert.match(sqlMediaDimension, /create table public\.marketing_instagram_media/i);
+assert.match(sqlMediaDimension, /alter table public\.marketing_instagram_metric_snapshot\s*\n\s*add constraint marketing_instagram_metric_snapshot_media_fk/i);
+assert.match(sqlMediaDimension, /create function public\.marketing_instagram_ultimo_snapshot/i);
+assert.match(sqlMediaDimension, /create function public\.marketing_instagram_delta_snapshot/i);
+assert.equal(sqlAccountDaily.trimStart().includes('begin;'), true, 'A 0031 deve iniciar uma transação explícita.');
+assert.equal(sqlAccountDaily.trimEnd().endsWith('commit;'), true, 'A 0031 deve finalizar a transação explicitamente.');
+assert.match(sqlAccountDaily, /create table public\.marketing_instagram_account_metric_daily/i);
+assert.match(sqlAccountDaily, /unique \(workspace_id, data\)/i);
+assert.equal(sqlPostAnalysis.trimStart().includes('begin;'), true, 'A 0033 deve iniciar uma transação explícita.');
+assert.equal(sqlPostAnalysis.trimEnd().endsWith('commit;'), true, 'A 0033 deve finalizar a transação explicitamente.');
+assert.match(sqlPostAnalysis, /create table public\.marketing_instagram_post_analysis/i);
+assert.match(sqlPostAnalysis, /'ANALISAR_POST'/);
+assert.match(sqlPostAnalysis, /marketing_instagram_post_analysis_append_only[\s\S]*marketing_bloquear_mutacao_append_only/i);
 assert.match(sqlHardening, /create unique index if not exists resultado_sorteio_id_uk/i);
 assert.match(sqlHardening, /marketing_criar_briefing_idempotente/i);
 assert.match(sqlHardening, /revoke delete on table public\.resultado/i);
@@ -125,6 +147,9 @@ const tabelasRls = [
   ...tabelasRls0013,
   'marketing_ai_budget',
   'marketing_content_version',
+  'marketing_instagram_media',
+  'marketing_instagram_account_metric_daily',
+  'marketing_instagram_post_analysis',
 ];
 for (const tabela of tabelasRls0013) {
   exige(`RLS em ${tabela}`, new RegExp(`alter table public\\.${tabela} enable row level security;`, 'i'));
@@ -171,6 +196,10 @@ const workspaceKeyB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 async function como(db, papel, usuarioId) {
   await db.exec(`reset role; set role ${papel};`);
   await db.query("select set_config('request.jwt.claim.sub', $1, false)", [usuarioId]);
+}
+
+function paraObjeto(valor) {
+  return typeof valor === 'string' ? JSON.parse(valor) : valor;
 }
 
 async function esperaErro(descricao, acao, codigo) {
@@ -257,6 +286,9 @@ try {
   await db.exec(sqlImagem);
   await db.exec(sqlFixAprovacao);
   await db.exec(sqlFixAuditoriaInsight);
+  await db.exec(sqlMediaDimension);
+  await db.exec(sqlAccountDaily);
+  await db.exec(sqlPostAnalysis);
 
   const hookInstitucional = await db.query(
     'select public.hook_permitir_somente_google_atol($1::jsonb) as resultado',
@@ -1011,6 +1043,245 @@ try {
   assert.equal(objetosVisiveisNaoMembro.rows.length, 0, 'Um usuário fora do workspace não deveria ver o objeto da imagem.');
   void objetoImagem;
 
+  // ---------------------------------------------------------------------------
+  // Onda 1 do spec-kit atol-analise-instagram-avancada: dimensão de mídia e leitura
+  // sem dupla contagem (marketing_instagram_ultimo_snapshot/delta_snapshot).
+  // ---------------------------------------------------------------------------
+  await db.exec('reset role;');
+  const igAccountId = 'f0f0f0f0-1111-4111-8111-f0f0f0f0f0f0';
+  await db.query(
+    "insert into public.ig_account (id, user_id, username) values ($1, $2, 'atol.ia.oficial')",
+    [igAccountId, usuarioA],
+  );
+  await como(db, 'authenticated', usuarioA);
+  const conexaoInstagram = await db.query(
+    'select * from public.marketing_vincular_conta_instagram($1, $2)',
+    [workspaceIdA, igAccountId],
+  );
+  const connectionId = conexaoInstagram.rows[0].id;
+
+  await db.exec('reset role;');
+  await como(db, 'service_role', '');
+
+  const mediaRecenteId = 'ig-post-recente';
+  const publicadoRecente = new Date(Date.now() - 2 * 86400000).toISOString();
+  const mediaAntigaId = 'ig-post-antigo';
+  const publicadoAntigo = new Date(Date.now() - 90 * 86400000).toISOString();
+
+  await db.query(
+    `insert into public.marketing_instagram_media
+       (workspace_id, connection_id, ig_media_id, media_type, permalink, publicado_em)
+     values
+       ($1, $2, $3, 'IMAGE', 'https://instagram.com/p/recente', $4),
+       ($1, $2, $5, 'IMAGE', 'https://instagram.com/p/antigo', $6)`,
+    [workspaceIdA, connectionId, mediaRecenteId, publicadoRecente, mediaAntigaId, publicadoAntigo],
+  );
+
+  await esperaErro(
+    'Um snapshot não pode referenciar mídia sem dimensão correspondente',
+    () => db.query(
+      `insert into public.marketing_instagram_metric_snapshot
+         (workspace_id, connection_id, ig_media_id, media_type, permalink, publicado_em, metricas)
+       values ($1, $2, 'ig-post-inexistente', 'IMAGE', null, null, '{}'::jsonb)`,
+      [workspaceIdA, connectionId],
+    ),
+    '23503',
+  );
+
+  // Regressão do bug real: reimportar o mesmo post grava uma linha nova (coletado_em
+  // diferente) em vez de atualizar. O código antigo somava todas as linhas do
+  // período — duas "importações" do post recente, 100 e depois 120 curtidas.
+  const coletaUm = new Date(Date.now() - 3 * 3600000).toISOString();
+  const coletaDois = new Date().toISOString();
+  await db.query(
+    `insert into public.marketing_instagram_metric_snapshot
+       (workspace_id, connection_id, ig_media_id, media_type, permalink, publicado_em, metricas, coletado_em)
+     values
+       ($1, $2, $3, 'IMAGE', 'https://instagram.com/p/recente', $4, $5::jsonb, $6),
+       ($1, $2, $3, 'IMAGE', 'https://instagram.com/p/recente', $4, $7::jsonb, $8)`,
+    [
+      workspaceIdA, connectionId, mediaRecenteId, publicadoRecente,
+      JSON.stringify({ likes: 100, comentarios: 10 }), coletaUm,
+      JSON.stringify({ likes: 120, comentarios: 12 }), coletaDois,
+    ],
+  );
+  // Post antigo: uma única observação, coletada agora (reimportação tardia de conteúdo velho).
+  await db.query(
+    `insert into public.marketing_instagram_metric_snapshot
+       (workspace_id, connection_id, ig_media_id, media_type, permalink, publicado_em, metricas, coletado_em)
+     values ($1, $2, $3, 'IMAGE', 'https://instagram.com/p/antigo', $4, $5::jsonb, $6)`,
+    [workspaceIdA, connectionId, mediaAntigaId, publicadoAntigo, JSON.stringify({ likes: 5, comentarios: 1 }), new Date().toISOString()],
+  );
+
+  await db.exec('reset role;');
+  await como(db, 'authenticated', usuarioA);
+
+  const ultimoTodas = await db.query(
+    'select * from public.marketing_instagram_ultimo_snapshot($1)',
+    [workspaceIdA],
+  );
+  assert.equal(
+    ultimoTodas.rows.filter((r) => r.ig_media_id === mediaRecenteId).length, 1,
+    'Reimportar o mesmo post deveria produzir uma única linha na leitura, não uma por importação.',
+  );
+  const linhaRecente = ultimoTodas.rows.find((r) => r.ig_media_id === mediaRecenteId);
+  assert.equal(
+    Number(paraObjeto(linhaRecente.metricas).likes), 120,
+    'A leitura deveria trazer o último valor observado (120), nunca a soma das reimportações (220).',
+  );
+
+  const seteDiasAtras = new Date(Date.now() - 7 * 86400000).toISOString();
+  const ultimoDaSemana = await db.query(
+    'select * from public.marketing_instagram_ultimo_snapshot($1, now(), $2)',
+    [workspaceIdA, seteDiasAtras],
+  );
+  assert.deepEqual(
+    ultimoDaSemana.rows.map((r) => r.ig_media_id).sort(),
+    [mediaRecenteId],
+    'O post publicado há 90 dias não deveria entrar no período semanal só por ter sido coletado agora (AC-02).',
+  );
+
+  const delta = await db.query(
+    'select * from public.marketing_instagram_delta_snapshot($1, $2)',
+    [workspaceIdA, coletaUm],
+  );
+  const deltaRecente = delta.rows.find((r) => r.ig_media_id === mediaRecenteId);
+  assert.equal(Number(paraObjeto(deltaRecente.metricas_antes).likes), 100, 'O delta não capturou o valor "antes" correto.');
+  assert.equal(Number(paraObjeto(deltaRecente.metricas_depois).likes), 120, 'O delta não capturou o valor "depois" correto.');
+
+  const deltaSemHistorico = await db.query(
+    'select * from public.marketing_instagram_delta_snapshot($1, $2)',
+    [workspaceIdA, new Date(Date.now() - 365 * 86400000).toISOString()],
+  );
+  const deltaAntiga = deltaSemHistorico.rows.find((r) => r.ig_media_id === mediaAntigaId);
+  assert.equal(
+    deltaAntiga.metricas_antes, null,
+    'Uma mídia sem observação anterior à janela deveria vir com metricas_antes nula, nunca zero.',
+  );
+
+  await db.exec('reset role;');
+  await como(db, 'anon', '');
+  await esperaErro(
+    'O papel anônimo não deve ler a dimensão de mídia',
+    () => db.query('select * from public.marketing_instagram_media'),
+    '42501',
+  );
+
+  console.log('Onda 1 (atol-analise-instagram-avancada): dedup e coorte por publicado_em verificados no PostgreSQL descartável.');
+
+  // ---------------------------------------------------------------------------
+  // Onda 2 do spec-kit atol-analise-instagram-avancada: série diária de conta —
+  // upsert por dia, nunca acumula várias linhas para a mesma data (mesma classe de
+  // bug corrigida na 0030, evitada aqui desde o desenho da tabela).
+  // ---------------------------------------------------------------------------
+  await db.exec('reset role;');
+  const hoje = new Date().toISOString().slice(0, 10);
+  await db.query(
+    `insert into public.marketing_instagram_account_metric_daily
+       (workspace_id, connection_id, data, seguidores, metricas)
+     values ($1, $2, $3, 120, $4::jsonb)`,
+    [workspaceIdA, connectionId, hoje, JSON.stringify({ reach: 300, views: 500 })],
+  );
+  await db.query(
+    `insert into public.marketing_instagram_account_metric_daily
+       (workspace_id, connection_id, data, seguidores, metricas)
+     values ($1, $2, $3, 125, $4::jsonb)
+     on conflict (workspace_id, data) do update set
+       seguidores = excluded.seguidores, metricas = excluded.metricas, atualizado_em = now()`,
+    [workspaceIdA, connectionId, hoje, JSON.stringify({ reach: 340, views: 560 })],
+  );
+  const contaHoje = await db.query(
+    'select seguidores, metricas from public.marketing_instagram_account_metric_daily where workspace_id = $1 and data = $2',
+    [workspaceIdA, hoje],
+  );
+  assert.equal(contaHoje.rows.length, 1, 'Duas coletas no mesmo dia deveriam upsertar uma única linha, não acumular.');
+  assert.equal(contaHoje.rows[0].seguidores, 125, 'O upsert deveria refletir a coleta mais recente do dia.');
+  assert.equal(Number(paraObjeto(contaHoje.rows[0].metricas).reach), 340, 'O upsert deveria refletir as métricas mais recentes do dia.');
+
+  await como(db, 'anon', '');
+  await esperaErro(
+    'O papel anônimo não deve ler a série diária de conta',
+    () => db.query('select * from public.marketing_instagram_account_metric_daily'),
+    '42501',
+  );
+  await db.exec('reset role;');
+
+  console.log('Onda 2 (atol-analise-instagram-avancada): upsert diário de métricas de conta verificado no PostgreSQL descartável.');
+
+  // ---------------------------------------------------------------------------
+  // Onda 5 do spec-kit atol-analise-instagram-avancada: análise de IA por post,
+  // versionada e append-only — nunca reprocessada sozinha, só cria numero+1.
+  // ---------------------------------------------------------------------------
+  await db.exec('reset role;');
+  await como(db, 'service_role', '');
+  const analiseV1 = await db.query(
+    `insert into public.marketing_instagram_post_analysis
+       (workspace_id, ig_media_id, numero, analise, sugestao, modelo_ia, solicitado_por, origem)
+     values ($1, $2, 1, 'Análise automática de exemplo.', 'Sugestão de exemplo.', 'modelo-teste', $3, 'AUTOMATICA')
+     returning id`,
+    [workspaceIdA, mediaRecenteId, usuarioA],
+  );
+  await esperaErro(
+    'Uma análise não pode repetir o mesmo número de versão para o mesmo post',
+    () => db.query(
+      `insert into public.marketing_instagram_post_analysis
+         (workspace_id, ig_media_id, numero, analise, modelo_ia, solicitado_por, origem)
+       values ($1, $2, 1, 'Duplicada.', 'modelo-teste', $3, 'MANUAL')`,
+      [workspaceIdA, mediaRecenteId, usuarioA],
+    ),
+    '23505',
+  );
+  const analiseV2 = await db.query(
+    `insert into public.marketing_instagram_post_analysis
+       (workspace_id, ig_media_id, numero, analise, sugestao, modelo_ia, solicitado_por, origem)
+     values ($1, $2, 2, 'Reanálise manual de exemplo.', 'Nova sugestão.', 'modelo-teste', $3, 'MANUAL')
+     returning id`,
+    [workspaceIdA, mediaRecenteId, usuarioA],
+  );
+  const versoesAnalise = await db.query(
+    'select numero from public.marketing_instagram_post_analysis where workspace_id = $1 and ig_media_id = $2 order by numero',
+    [workspaceIdA, mediaRecenteId],
+  );
+  assert.deepEqual(
+    versoesAnalise.rows.map((r) => r.numero), [1, 2],
+    'A reanálise deveria criar a versão 2 preservando a versão 1, nunca sobrescrever.',
+  );
+  await esperaErro(
+    'Uma análise não pode referenciar mídia sem dimensão correspondente',
+    () => db.query(
+      `insert into public.marketing_instagram_post_analysis
+         (workspace_id, ig_media_id, numero, analise, modelo_ia, solicitado_por, origem)
+       values ($1, 'ig-post-inexistente', 1, 'Análise.', 'modelo-teste', $2, 'AUTOMATICA')`,
+      [workspaceIdA, usuarioA],
+    ),
+    '23503',
+  );
+
+  await db.exec('reset role;');
+  await esperaErro(
+    'A análise de post deve permanecer append-only (update)',
+    () => db.query(
+      "update public.marketing_instagram_post_analysis set analise = 'Alterada' where id = $1",
+      [analiseV1.rows[0].id],
+    ),
+    '55000',
+  );
+  await esperaErro(
+    'A análise de post deve permanecer append-only (delete)',
+    () => db.query('delete from public.marketing_instagram_post_analysis where id = $1', [analiseV2.rows[0].id]),
+    '55000',
+  );
+
+  await como(db, 'anon', '');
+  await esperaErro(
+    'O papel anônimo não deve ler análises de post',
+    () => db.query('select * from public.marketing_instagram_post_analysis'),
+    '42501',
+  );
+  await db.exec('reset role;');
+
+  console.log('Onda 5 (atol-analise-instagram-avancada): versionamento append-only da análise de post verificado no PostgreSQL descartável.');
+
   console.log('Migrações 0013–0020: execução real e invariantes críticas verificadas no PostgreSQL descartável.');
 } finally {
   await db.close();
@@ -1039,4 +1310,108 @@ try {
   console.log('Migração 0013: rollback transacional verificado sem objetos parciais.');
 } finally {
   await rollbackDb.close();
+}
+
+// Migração 0030, risco #3 do spec-kit: o backfill precisa preservar dado que já
+// existia ANTES desta migração — aplica 0013–0029, semeia snapshots como se fossem
+// reimportações antigas, só então aplica 0030 e confere o resultado.
+const backfillDb = new PGlite();
+try {
+  await prepararSupabaseDescartavel(backfillDb);
+  await backfillDb.exec(sql);
+  await backfillDb.exec(sqlHardening);
+  await backfillDb.exec(sqlAiStrategy);
+  await backfillDb.exec(sqlAiStrategyIndexes);
+  await backfillDb.exec(sqlApproval);
+  await backfillDb.exec(sqlInstagramReadonly);
+  await backfillDb.exec(sqlContextNotes);
+  await backfillDb.exec(sqlGoogleOnlyAuth);
+  await backfillDb.exec(sqlRestringirAcesso);
+  await backfillDb.exec(sqlImportRun);
+  await backfillDb.exec(sqlComentarios);
+  await backfillDb.exec(sqlNotaEdicao);
+  await backfillDb.exec(sqlInsight);
+  await backfillDb.exec(sqlImagem);
+  await backfillDb.exec(sqlFixAprovacao);
+  await backfillDb.exec(sqlFixAuditoriaInsight);
+  // Ainda sem 0030 — reproduz o estado real do banco antes desta migração existir.
+  // Sem troca de role: os inserts de fixture usam o mesmo papel que criou as tabelas
+  // (dono, privilégios plenos), igual ao seed de auth.users no restante deste arquivo.
+
+  const usuarioPreExistente = 'f1f1f1f1-1111-4111-8111-f1f1f1f1f1f1';
+  const workspacePreExistenteId = 'f2f2f2f2-2222-4222-8222-f2f2f2f2f2f2';
+  const igAccountPreExistenteId = 'f3f3f3f3-3333-4333-8333-f3f3f3f3f3f3';
+  const connectionPreExistenteId = 'f4f4f4f4-4444-4444-8444-f4f4f4f4f4f4';
+  const postA = 'ig-post-pre-existente-a';
+  const postB = 'ig-post-pre-existente-b';
+
+  await backfillDb.query('insert into auth.users (id) values ($1)', [usuarioPreExistente]);
+  await backfillDb.query(
+    `insert into public.marketing_workspace (id, nome, criado_por, idempotency_key)
+     values ($1, 'Workspace pré-existente', $2, $3)`,
+    [workspacePreExistenteId, usuarioPreExistente, 'f5f5f5f5-5555-4555-8555-f5f5f5f5f5f5'],
+  );
+  await backfillDb.query(
+    "insert into public.ig_account (id, user_id, username) values ($1, $2, 'atol.ia.oficial')",
+    [igAccountPreExistenteId, usuarioPreExistente],
+  );
+  await backfillDb.query(
+    `insert into public.marketing_instagram_connection (id, workspace_id, ig_account_id, username, conectado_por)
+     values ($1, $2, $3, 'atol.ia.oficial', $4)`,
+    [connectionPreExistenteId, workspacePreExistenteId, igAccountPreExistenteId, usuarioPreExistente],
+  );
+
+  // Post A: duas observações históricas (reimportação antes da correção) — a mais
+  // recente traz o permalink/media_type que devem sobreviver ao backfill.
+  await backfillDb.query(
+    `insert into public.marketing_instagram_metric_snapshot
+       (workspace_id, connection_id, ig_media_id, media_type, permalink, publicado_em, metricas, coletado_em)
+     values
+       ($1, $2, $3, 'IMAGE', 'https://instagram.com/p/a-antigo', '2026-01-10T00:00:00Z', $4::jsonb, '2026-01-10T08:00:00Z'),
+       ($1, $2, $3, 'IMAGE', 'https://instagram.com/p/a-atual', '2026-01-10T00:00:00Z', $5::jsonb, '2026-01-15T08:00:00Z')`,
+    [
+      workspacePreExistenteId, connectionPreExistenteId, postA,
+      JSON.stringify({ likes: 10, comentarios: 1 }),
+      JSON.stringify({ likes: 40, comentarios: 4 }),
+    ],
+  );
+  // Post B: uma única observação.
+  await backfillDb.query(
+    `insert into public.marketing_instagram_metric_snapshot
+       (workspace_id, connection_id, ig_media_id, media_type, permalink, publicado_em, metricas, coletado_em)
+     values ($1, $2, $3, 'VIDEO', 'https://instagram.com/p/b', '2026-01-05T00:00:00Z', $4::jsonb, '2026-01-05T08:00:00Z')`,
+    [workspacePreExistenteId, connectionPreExistenteId, postB, JSON.stringify({ likes: 7, comentarios: 0 })],
+  );
+
+  await backfillDb.exec(sqlMediaDimension);
+
+  const dimensaoBackfillada = await backfillDb.query(
+    `select ig_media_id, media_type, permalink, publicado_em
+       from public.marketing_instagram_media
+      where workspace_id = $1
+      order by ig_media_id`,
+    [workspacePreExistenteId],
+  );
+  assert.equal(
+    dimensaoBackfillada.rows.length, 2,
+    'O backfill deveria criar uma linha de dimensão por mídia distinta, não uma por snapshot.',
+  );
+  const dimensaoPostA = dimensaoBackfillada.rows.find((r) => r.ig_media_id === postA);
+  assert.equal(
+    dimensaoPostA.permalink, 'https://instagram.com/p/a-atual',
+    'O backfill deveria usar os dados do snapshot mais recente de cada mídia (distinct on ... order by coletado_em desc).',
+  );
+
+  const snapshotsPreservados = await backfillDb.query(
+    'select count(*)::integer as total from public.marketing_instagram_metric_snapshot where workspace_id = $1',
+    [workspacePreExistenteId],
+  );
+  assert.equal(
+    snapshotsPreservados.rows[0].total, 3,
+    'O backfill não deveria apagar nem alterar o histórico de snapshots já coletado.',
+  );
+
+  console.log('Migração 0030: backfill preservou o histórico já coletado antes desta migração existir.');
+} finally {
+  await backfillDb.close();
 }

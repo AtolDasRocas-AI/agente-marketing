@@ -4,6 +4,7 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { extrairJson, respostaCors, respostaJson } from '../_shared/ig.ts';
 
 const CONFIANCAS = ['BAIXA', 'MEDIA', 'ALTA'] as const;
+const CAMPOS_METRICA_RELEVANTES = ['likes', 'comentarios', 'reach', 'views', 'saved', 'shares', 'total_interactions'] as const;
 
 function numeroAmbiente(nome: string): number | null {
   const valor = Number(Deno.env.get(nome));
@@ -12,6 +13,49 @@ function numeroAmbiente(nome: string): number | null {
 function codigoSeguro(erro: unknown): string {
   if (erro && typeof erro === 'object' && 'code' in erro && typeof erro.code === 'string') return erro.code.slice(0, 120);
   return 'FALHA_PROVEDOR';
+}
+
+/** Só os campos numéricos que importam pra análise — nunca media_url/thumbnail_url/children (payload sem valor analítico, ver docs/agente-analista-instagram-atol.md). */
+function metricasRelevantes(m: Record<string, unknown>): Record<string, number> {
+  const saida: Record<string, number> = {};
+  for (const campo of CAMPOS_METRICA_RELEVANTES) {
+    const valor = m[campo];
+    if (typeof valor === 'number') saida[campo] = valor;
+  }
+  return saida;
+}
+
+function mediana(valores: number[]): number {
+  const ordenados = [...valores].sort((a, b) => a - b);
+  const meio = Math.floor(ordenados.length / 2);
+  return ordenados.length % 2 ? ordenados[meio] : (ordenados[meio - 1] + ordenados[meio]) / 2;
+}
+
+/**
+ * Mesma lógica de app/src/features/marketing/tendenciaConta.ts — Deno e navegador são
+ * runtimes diferentes e não compartilham módulo aqui; manter as duas em sincronia.
+ * `diariaDesc` deve vir ordenada do dia mais recente para o mais antigo.
+ */
+function calcularTendenciaSemanal(diariaDesc: Array<{ metricas: Record<string, unknown> }>) {
+  const somaJanela = (inicio: number, fim: number) =>
+    diariaDesc.slice(inicio, fim).reduce((soma, dia) => soma + Number(dia.metricas.reach ?? 0), 0);
+  const semanaAtual = somaJanela(0, 7);
+  const semanaAnterior = diariaDesc.length > 7 ? somaJanela(7, 14) : null;
+  const somasSemanais = [0, 1, 2, 3].filter((i) => diariaDesc.length > i * 7).map((i) => somaJanela(i * 7, i * 7 + 7));
+  const medianaQuatroSemanas = somasSemanais.length >= 2 ? mediana(somasSemanais) : null;
+  return { semanaAtual, semanaAnterior, medianaQuatroSemanas, semanasDisponiveis: somasSemanais.length };
+}
+
+/**
+ * Confiança calculada pelo sistema, nunca pelo modelo (AC-10): poucas publicações ou
+ * nenhuma semana anterior pra comparar vira BAIXA; só sobe pra ALTA com amostra e
+ * histórico de conta genuinamente maiores. Limiares são a primeira calibração — revisar
+ * depois de algumas semanas de dado real, mesmo aviso do documento de análise complementar.
+ */
+function calcularConfianca(nPublicacoes: number, temComparacaoSemanal: boolean, semanasDisponiveis: number): typeof CONFIANCAS[number] {
+  if (nPublicacoes < 3 || !temComparacaoSemanal) return 'BAIXA';
+  if (nPublicacoes >= 6 && semanasDisponiveis >= 3) return 'ALTA';
+  return 'MEDIA';
 }
 
 interface Pedido { workspace_id?: string; idempotency_key?: string; periodo_dias?: number }
@@ -52,18 +96,25 @@ Deno.serve(async (req) => {
     const inicioPeriodo = new Date(fimPeriodo.getTime() - periodoDias * 86_400_000);
     const inicioIso = inicioPeriodo.toISOString();
 
-    const [{ data: metricas, error: metricasErro }, { data: notas, error: notasErro }, { data: comentarios, error: comentariosErro }] = await Promise.all([
-      admin.from('marketing_instagram_metric_snapshot').select('ig_media_id,media_type,permalink,publicado_em,metricas,coletado_em')
-        .eq('workspace_id', pedido.workspace_id).gte('coletado_em', inicioIso).order('coletado_em', { ascending: false }),
+    const [
+      { data: metricas, error: metricasErro }, { data: notas, error: notasErro },
+      { data: comentarios, error: comentariosErro }, { data: contaDiaria, error: contaDiariaErro },
+    ] = await Promise.all([
+      // Uma linha por mídia (nunca por reimportação): marketing_instagram_ultimo_snapshot
+      // já deduplica e filtra por data de publicação, não de coleta (correção da Onda 1).
+      admin.rpc('marketing_instagram_ultimo_snapshot', { p_workspace_id: pedido.workspace_id, p_publicado_desde: inicioIso }),
       admin.from('marketing_context_note').select('titulo,categoria,ocorrido_em,nota')
         .eq('workspace_id', pedido.workspace_id).is('arquivado_em', null)
         .gte('ocorrido_em', inicioPeriodo.toISOString().slice(0, 10)).order('ocorrido_em', { ascending: false }),
       admin.from('marketing_instagram_comment_snapshot').select('categoria')
         .eq('workspace_id', pedido.workspace_id).gte('coletado_em', inicioIso).not('categoria', 'is', null),
+      admin.from('marketing_instagram_account_metric_daily').select('metricas')
+        .eq('workspace_id', pedido.workspace_id).order('data', { ascending: false }).limit(35),
     ]);
     if (metricasErro) throw metricasErro;
     if (notasErro) throw notasErro;
     if (comentariosErro) throw comentariosErro;
+    if (contaDiariaErro) throw contaDiariaErro;
 
     if (!metricas || metricas.length === 0) {
       return respostaJson({
@@ -78,6 +129,9 @@ Deno.serve(async (req) => {
       return acc;
     }, {});
 
+    const tendenciaConta = calcularTendenciaSemanal((contaDiaria ?? []) as Array<{ metricas: Record<string, unknown> }>);
+    const confiancaCalculada = calcularConfianca(metricas.length, tendenciaConta.semanaAnterior !== null, tendenciaConta.semanasDisponiveis);
+
     const entradaResumida = {
       periodo_inicio: inicioPeriodo.toISOString().slice(0, 10),
       periodo_fim: fimPeriodo.toISOString().slice(0, 10),
@@ -88,10 +142,16 @@ Deno.serve(async (req) => {
         data_publicacao: m.publicado_em ? String(m.publicado_em).slice(0, 10) : 'sem data',
         link: m.permalink ?? null,
         tipo: m.media_type,
-        ...(m.metricas as Record<string, unknown>),
+        ...metricasRelevantes(m.metricas as Record<string, unknown>),
       })),
+      alcance_conta: {
+        ultimos_7_dias: tendenciaConta.semanaAtual,
+        sete_dias_anteriores: tendenciaConta.semanaAnterior,
+        mediana_ultimas_semanas: tendenciaConta.medianaQuatroSemanas,
+      },
       notas_de_contexto: (notas ?? []).map((n) => ({ titulo: n.titulo, categoria: n.categoria, data: n.ocorrido_em })),
       distribuicao_categorias_comentarios: distribuicaoCategorias,
+      confianca_calculada_pelo_sistema: confiancaCalculada,
     };
 
     const { data: execucao, error: inicioErro } = await admin.rpc('marketing_iniciar_execucao_ia_livre', {
@@ -123,10 +183,10 @@ Deno.serve(async (req) => {
     const prompt = [
       'Você é o agente de inteligência de produto da ATOL. Analise os dados e proponha UMA hipótese revisável.',
       'Regra inegociável: nunca afirme causalidade. Uma nota de contexto só pode "coincidir com o período", nunca "causar" um resultado.',
-      'Se os dados forem insuficientes para uma hipótese razoável, prefira confianca "BAIXA" a inventar uma conclusão forte.',
+      `A confiança já foi calculada pelo sistema como "${confiancaCalculada}", a partir da quantidade de publicações e de semanas de histórico de conta disponíveis — use exatamente esse valor no campo confianca da sua resposta; a sua resposta não decide a confiança, só a explica.`,
       'Ao citar uma publicação específica nas evidências, refira-se por data (ex.: "o post de 12/09") ou pelo link — nunca por um identificador técnico, que não significa nada para quem lê depois.',
       'Responda só JSON com as chaves: hipotese (string), evidencias (array de strings), limitacoes (string),',
-      'confianca ("BAIXA"|"MEDIA"|"ALTA"), proxima_acao (string).',
+      `confianca (deve ser exatamente "${confiancaCalculada}"), proxima_acao (string).`,
       'Dados do período:',
       JSON.stringify(entradaResumida),
     ].join('\n');
@@ -173,11 +233,17 @@ Deno.serve(async (req) => {
       erro.code = 'RESPOSTA_IA_INVALIDA';
       throw erro;
     }
-    if (!conteudo?.hipotese || !CONFIANCAS.includes((conteudo.confianca ?? '') as typeof CONFIANCAS[number])) {
+    if (!conteudo?.hipotese) {
       const erro = new Error('RESPOSTA_IA_INCOMPLETA') as Error & { code?: string };
       erro.code = 'RESPOSTA_IA_INCOMPLETA';
       throw erro;
     }
+    // Confiança nunca é decidida pelo modelo (AC-10): se ele devolver algo diferente do
+    // calculado pelo sistema (inclusive tentando "subir" o próprio nível), sobrescreve.
+    if (conteudo.confianca !== confiancaCalculada) {
+      console.warn('marketing-gerar-insight: modelo devolveu confiança divergente da calculada pelo sistema — sobrescrevendo.');
+    }
+    conteudo.confianca = confiancaCalculada;
 
     const custoReal = Math.max(0, Number(corpo?.usage?.cost ?? custoEstimado));
 
