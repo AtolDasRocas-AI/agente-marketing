@@ -22,13 +22,37 @@ function numeroAmbiente(nome: string): number | null {
   return Number.isFinite(valor) && valor > 0 ? valor : null;
 }
 
+// Identidade visual real da ATOL: logotipo oficial (fornecido pelo responsável em 16/09/2026)
+// mais posts públicos de @atol.ia.oficial — app de aquarismo marinho com IA, "conectando
+// você ao seu aquário". Revalidar de tempos em tempos, já que o padrão visual pode evoluir.
+const IDENTIDADE_VISUAL_ATOL = 'A marca é a ATOL IA, um app de aquarismo marinho com IA ' +
+  '("conectando você ao seu aquário"). O símbolo da marca é um atol visto de cima: um anel de ' +
+  'recife colorido (corais-cérebro, corais-chifre e corais moles em amarelo, verde, laranja e ' +
+  'azul-turquesa) envolvendo uma lagoa turquesa com uma ilhota de areia clara e um pequeno ' +
+  'farol listrado de vermelho e branco; azul-marinho profundo é a cor de texto/contorno da ' +
+  'marca. Use essa paleta (turquesa da lagoa, areia clara, cores vivas de coral, azul-marinho) ' +
+  'como base cromática da cena, e — quando fizer sentido pro post, sem forçar — o motivo de ' +
+  'recife/atol/lagoa/farol como referência temática. A cena continua sendo uma fotografia ' +
+  'profissional realista (não um desenho ou ilustração como o logotipo em si). Não tente ' +
+  'redesenhar o logotipo nem escrever "ATOL" na imagem — isso é aplicado depois, por fora da ' +
+  'imagem gerada. ' +
+  'Siga o padrão visual que a conta do Instagram já usa hoje, sem inventar um estilo novo: ' +
+  'fundo escuro com brilho azul-esverdeado tipo aquário para cenas de produto/estilo de vida, ' +
+  'fotografia de produto limpa e bem iluminada para itens físicos ou virtuais de recife (rochas, ' +
+  'corais, acessórios), ou peça gráfica com estatística/selo para posts de divulgação do app. ' +
+  '"Profissionalizar" aqui significa melhorar nitidez, iluminação e composição dentro desse ' +
+  'padrão já estabelecido — nunca trocar o estilo nem abandonar essas características.';
+
 function promptPara(item: Record<string, unknown>, operacao: string, conteudoAprovado: Record<string, unknown> | null): string {
   const instrucaoDeCampos = operacao === 'PROMPT_IMAGEM'
     ? [
         'Estruture só a chave: prompt_imagem (descrição visual longa e detalhada, em português do Brasil, pronta para um gerador de imagem).',
-        'Prioridade máxima: a cena descrita tem que ser uma representação direta e específica do briefing e do conteúdo já rascunhado abaixo (estratégia, ângulo, legenda e CTA, quando existirem) — nunca uma cena genérica de estoque desconectada do assunto. Releia tudo com atenção antes de escrever; a imagem deve visualizar exatamente essa ideia, não uma interpretação livre ou só o tema geral do pilar.',
-        'Só depois de definir a cena específica, refine a descrição como um diretor de fotografia profissional: para cena fotográfica (não mockup de interface), especifique câmera e lente coerentes com a tendência atual de fotografia comercial/editorial — por exemplo "85mm f/1.4" para retrato com fundo desfocado, "24-35mm" para grande angular de ambiente, ou lente macro para detalhe de coral/peixe —, tipo e direção da luz (natural, hora dourada, softbox, contraluz), enquadramento, profundidade de campo e o estilo geral (comercial de alto padrão, editorial, cinematográfico). Para telas de app ou mockup de interface, descreva como fotografia de produto em estúdio (fundo limpo, luz suave e uniforme) em vez de câmera/lente de cena.',
-        'A cena inteira precisa ser coerente: todos os elementos combinam entre si e com o briefing, sem nada forçado, fora de contexto ou colado artificialmente só para "encaixar" um conceito. Evite qualquer característica que entregue a imagem como gerada por IA à primeira vista — anatomia e proporções corretas quando houver pessoas ou animais, sombras e iluminação consistentes em toda a cena, texturas realistas, nunca composição genérica de banco de imagens. O resultado deve parecer uma fotografia profissional real, bem composta e montada, indistinguível de uma foto comercial de verdade.',
+        'Ordem de prioridade ao decidir o que a imagem mostra, da mais importante pra menos importante — nunca inverta essa ordem: ',
+        '(1) a ideia/mensagem central deste post (objetivo, pilar, hipótese e o conteúdo já rascunhado abaixo — estratégia, ângulo, legenda, CTA); a imagem existe para comunicar essa ideia específica, não para ser uma foto bonita genérica desconectada do assunto;',
+        '(2) a identidade visual da marca ATOL: ' + IDENTIDADE_VISUAL_ATOL + ' Além disso, qualquer elemento visual, cor ou característica de marca que já apareça no conteúdo rascunhado abaixo também precisa se refletir na cena — a peça tem que ser reconhecível como ATOL, nunca uma imagem de banco de imagens sem marca nenhuma;',
+        '(3) só depois de (1) e (2) estarem claros, refine com técnica de fotografia profissional (câmera, lente, luz, enquadramento) — isso é um meio de deixar a cena que já representa a ideia e a marca mais bonita e realista, nunca o assunto principal da descrição. Para cena fotográfica: câmera/lente coerentes com a tendência atual de fotografia comercial/editorial (ex.: "85mm f/1.4" pra retrato com fundo desfocado, "24-35mm" pra grande angular, lente macro pra detalhe de coral/peixe), luz, enquadramento, profundidade de campo. Para telas de app/mockup: fotografia de produto em estúdio.',
+        'Nunca deixe o detalhe técnico de fotografia tomar tanto espaço da descrição que a cena perca a ligação com a ideia do post ou com a marca — se tiver que escolher, ideia e marca vêm sempre antes de qualquer refinamento fotográfico.',
+        'A cena inteira precisa ser coerente: todos os elementos combinam entre si e com o briefing, sem nada forçado ou colado artificialmente só para "encaixar" um conceito. Evite qualquer característica que entregue a imagem como gerada por IA à primeira vista — anatomia e proporções corretas quando houver pessoas ou animais, sombras e iluminação consistentes, texturas realistas, nunca composição genérica de banco de imagens.',
         'Se a imagem tiver qualquer texto, legenda, botão, rótulo de interface ou logotipo com texto visível, esse texto deve estar em português do Brasil — nunca em inglês.',
       ].join(' ')
     : 'Estruture sempre as chaves: estrategia, angulo, legenda, cta, hashtags, alt_text. Escreva com qualidade profissional de copywriting, sempre em português do Brasil.';
