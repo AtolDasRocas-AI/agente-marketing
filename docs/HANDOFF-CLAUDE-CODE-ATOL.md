@@ -14,11 +14,16 @@ As 5 ondas foram implementadas, validadas localmente (`npm run check` verde a ca
 
 **Aplicado remotamente nesta sessão, com autorização do responsável a cada passo:** migrações `0030`–`0034` (via `supabase db query --linked --file`, nunca `db push`); functions `marketing-importar-metricas-instagram`, `marketing-gerar-insight`, `marketing-analisar-post-instagram` implantadas. Todos os 6 cron jobs confirmados ativos em `cron.job`.
 
+**Resolvido nesta sessão (16/09/2026):** `MARKETING_AI_POST_ANALYSIS_MODEL=google/gemini-2.5-flash-lite` (revalidado ao vivo: $0,10/$0,40 por 1M, 99,91% de disponibilidade) e `MARKETING_AI_POST_ANALYSIS_ESTIMATED_COST_USD=0.001` configurados via `supabase secrets set` — `marketing-analisar-post-instagram` não depende mais de nenhuma configuração pendente.
+
+**Publicado no Vercel nesta sessão (16/09/2026), a pedido explícito do responsável:** `dpl_4hvqFEWqULcpowogZ2Nrb55Dh6wx`, alias `https://app-one-fawn-32.vercel.app` confirmado. Verificado no navegador: a página inicial carrega sem erro de console.
+
+- **Correção ao padrão de deploy documentado antes:** o comando `vercel pull`/`vercel build --prebuilt` rodando de dentro de `app/` (como este documento recomendava) passou a falhar com `Cannot resolve entry module index.html` — o projeto Vercel tem `rootDirectory: "app"` configurado, então rodar já de dentro de `app/` faz o CLI tentar descer em `app/app/`. Rodar os mesmos comandos a partir da **raiz do repositório** (onde já existe um `.vercel/project.json` de uma sessão anterior) parou de dar esse erro, mas o build local ficou com `.vercel/output` sem a pasta `static/` (aviso "Build output contains no functions or static directory") — o prebuilt ficaria vazio se implantado assim.
+- **O que funcionou:** `npx vercel deploy --prod` (sem `--prebuilt`, sem passo de `vercel build` separado) direto da raiz do repositório — deixa a Vercel buildar remotamente (`Running "npm run build"` no log), ~10s de build, mesma URL de produção. Mais simples e mais robusto que o pipeline prebuilt de duas etapas. Se o prebuilt voltar a ser necessário no futuro, investigar por que `vercel build` não está populando `static/` antes de tentar de novo — não gastar tempo repetindo o mesmo comando.
+
 **Pendente do responsável:**
-1. `MARKETING_AI_POST_ANALYSIS_MODEL` / `MARKETING_AI_POST_ANALYSIS_ESTIMATED_COST_USD` — sem esses dois secrets, `marketing-analisar-post-instagram` responde `CONFIGURACAO_IA_AUSENTE`. Sugestão: `google/gemini-2.5-flash-lite` (já validado para comentários), mas revalidar preço/disponibilidade ao vivo em openrouter.ai/models antes de fixar.
-2. Publicar esta leva de mudanças de frontend no Vercel — combinado que ficaria pendente de confirmação explícita, ainda não pedida.
-3. Validação com dado real do Instagram (visualizações, alcance, tempo de exibição de Reels, crescimento de conta) segue bloqueada pela reconexão de `@atol.ia.oficial`, mesma pendência já registrada abaixo.
-4. Recorrência (3ª vez nesta sessão) do problema de troca de conta do CLI do Supabase — ver [[project-atol-marketing]] na memória do Claude Code; recomendação de `SUPABASE_ACCESS_TOKEN` persistente segue de pé.
+1. Validação com dado real do Instagram (visualizações, alcance, tempo de exibição de Reels, crescimento de conta, análise de post) segue bloqueada pela reconexão de `@atol.ia.oficial`, mesma pendência já registrada abaixo.
+2. Recorrência (4ª vez nesta sessão) do problema de troca de conta do CLI do Supabase — ver [[project-atol-marketing]] na memória do Claude Code; recomendação de `SUPABASE_ACCESS_TOKEN` persistente segue de pé.
 
 ### Stories via Login do Instagram — investigado e descartado em definitivo (2026-09-15)
 
