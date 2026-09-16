@@ -48,6 +48,8 @@ const referenciasMarcaUrl = new URL('../supabase/migrations/0035_marketing_refer
 const sqlReferenciasMarca = await readFile(fileURLToPath(referenciasMarcaUrl), 'utf8');
 const composicaoTextoUrl = new URL('../supabase/migrations/0036_marketing_composicao_imagem_texto.sql', import.meta.url);
 const sqlComposicaoTexto = await readFile(fileURLToPath(composicaoTextoUrl), 'utf8');
+const melhorarTextoUrl = new URL('../supabase/migrations/0037_marketing_melhorar_texto_imagem.sql', import.meta.url);
+const sqlMelhorarTexto = await readFile(fileURLToPath(melhorarTextoUrl), 'utf8');
 
 function exige(descricao, padrao) {
   assert.match(sql, padrao, `Migração 0013 sem garantia: ${descricao}`);
@@ -148,6 +150,9 @@ assert.equal(sqlComposicaoTexto.trimStart().includes('begin;'), true, 'A 0036 de
 assert.equal(sqlComposicaoTexto.trimEnd().endsWith('commit;'), true, 'A 0036 deve finalizar a transação explicitamente.');
 assert.match(sqlComposicaoTexto, /add column origem_imagem_id uuid references public\.marketing_image_asset\(id\)/i);
 assert.match(sqlComposicaoTexto, /add column texto_overlay jsonb/i);
+assert.equal(sqlMelhorarTexto.trimStart().includes('begin;'), true, 'A 0037 deve iniciar uma transação explícita.');
+assert.equal(sqlMelhorarTexto.trimEnd().endsWith('commit;'), true, 'A 0037 deve finalizar a transação explicitamente.');
+assert.match(sqlMelhorarTexto, /'MELHORAR_TEXTO_IMAGEM'/);
 
 const tabelasRls0013 = [
   'marketing_workspace',
@@ -306,6 +311,7 @@ try {
   await db.exec(sqlPostAnalysis);
   await db.exec(sqlReferenciasMarca);
   await db.exec(sqlComposicaoTexto);
+  await db.exec(sqlMelhorarTexto);
 
   const hookInstitucional = await db.query(
     'select public.hook_permitir_somente_google_atol($1::jsonb) as resultado',
@@ -1386,6 +1392,23 @@ try {
 
   await db.exec('reset role;');
   console.log('Migração 0036: composição de imagem com texto (origem_imagem_id/texto_overlay) verificada no PostgreSQL descartável.');
+
+  // Migração 0037: o agente que reescreve o texto da imagem é uma chamada de modelo como
+  // outra qualquer, então precisa ser aceita pelo check de operacao de marketing_ai_run.
+  await db.exec('reset role;');
+  await como(db, 'service_role', '');
+  const execucaoMelhoria = await db.query(
+    `select * from public.marketing_iniciar_execucao_ia_livre(
+      $1, $2, 'MELHORAR_TEXTO_IMAGEM', 'openrouter', 'modelo-teste', 800, $3, 0.01
+    )`,
+    [workspaceIdA, usuarioA, '17171717-1717-4171-8171-171717171717'],
+  );
+  assert.equal(
+    execucaoMelhoria.rows[0].status, 'EXECUTANDO',
+    'A operação MELHORAR_TEXTO_IMAGEM precisa ser aceita pelo check de marketing_ai_run (migração 0037).',
+  );
+  await db.exec('reset role;');
+  console.log('Migração 0037: operação MELHORAR_TEXTO_IMAGEM aceita no ledger de IA, verificada no PostgreSQL descartável.');
 
   console.log('Migrações 0013–0020: execução real e invariantes críticas verificadas no PostgreSQL descartável.');
 } finally {

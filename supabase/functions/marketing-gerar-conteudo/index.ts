@@ -65,6 +65,19 @@ const INSTRUCAO_TEXTO_NA_CENA = 'Se a imagem tiver qualquer texto, legenda, bot�
   'interface ou logotipo com texto visível, esse texto deve estar em português do Brasil — ' +
   'nunca em inglês.';
 
+// A escolha de qual tela real do app usar como referência nasce do próprio briefing: quem lê
+// o conteúdo editorial sabe se o post fala de parâmetros da água, alertas, iluminação etc.
+// A lista é fechada (mesmas chaves de _shared/identidadeVisual.ts) e a seleção continua
+// editável por quem revisa.
+const INSTRUCAO_TELAS_SUGERIDAS = 'Inclua também a chave telas_sugeridas: um array com no '
+  + 'máximo 2 nomes, escolhidos EXCLUSIVAMENTE desta lista, indicando quais telas reais do '
+  + 'aplicativo fazem sentido aparecer neste post — DASHBOARD (visão geral), PARAMETROS '
+  + '(parâmetros da água), ALERTAS, ASSISTENTE_IA (assistente de IA/chat), HABITANTES (peixes '
+  + 'e corais), DIARIO, REEF_VIRTUAL (simulação do layout), CRIAR_CONTEUDO, ILUMINACAO, '
+  + 'PROTOCOLOS, CONFIGURACOES. Devolva um array VAZIO quando o post não mostrar o aplicativo: '
+  + 'a maioria dos posts é fotografia pura, sem nenhuma interface, e anexar telas sem '
+  + 'necessidade faz a imagem parecer uma captura de tela em vez de uma foto.';
+
 function promptPara(
   item: Record<string, unknown>,
   operacao: string,
@@ -74,8 +87,8 @@ function promptPara(
   const instrucaoDeCampos = operacao === 'PROMPT_IMAGEM'
     ? [
         comTextoSobreposto
-          ? 'Estruture as chaves: prompt_imagem (descrição visual longa e detalhada, em português do Brasil, pronta para um gerador de imagem) e texto_overlay (ver instrução específica abaixo).'
-          : 'Estruture só a chave: prompt_imagem (descrição visual longa e detalhada, em português do Brasil, pronta para um gerador de imagem).',
+          ? 'Estruture as chaves: prompt_imagem (descrição visual longa e detalhada, em português do Brasil, pronta para um gerador de imagem), texto_overlay e telas_sugeridas (ver instruções específicas abaixo).'
+          : 'Estruture as chaves: prompt_imagem (descrição visual longa e detalhada, em português do Brasil, pronta para um gerador de imagem) e telas_sugeridas (ver instrução específica abaixo).',
         'Ordem de prioridade ao decidir o que a imagem mostra, da mais importante pra menos importante — nunca inverta essa ordem: ',
         '(1) a ideia/mensagem central deste post (objetivo, pilar, hipótese e o conteúdo já rascunhado abaixo — estratégia, ângulo, legenda, CTA); a imagem existe para comunicar essa ideia específica, não para ser uma foto bonita genérica desconectada do assunto;',
         '(2) a identidade visual da marca ATOL: ' + IDENTIDADE_VISUAL_ATOL + ' Além disso, qualquer elemento visual, cor ou característica de marca que já apareça no conteúdo rascunhado abaixo também precisa se refletir na cena — a peça tem que ser reconhecível como ATOL, nunca uma imagem de banco de imagens sem marca nenhuma;',
@@ -83,6 +96,7 @@ function promptPara(
         'Nunca deixe o detalhe técnico de fotografia tomar tanto espaço da descrição que a cena perca a ligação com a ideia do post ou com a marca — se tiver que escolher, ideia e marca vêm sempre antes de qualquer refinamento fotográfico.',
         'A cena inteira precisa ser coerente: todos os elementos combinam entre si e com o briefing, sem nada forçado ou colado artificialmente só para "encaixar" um conceito. Evite qualquer característica que entregue a imagem como gerada por IA à primeira vista — anatomia e proporções corretas quando houver pessoas ou animais, sombras e iluminação consistentes, texturas realistas, nunca composição genérica de banco de imagens.',
         comTextoSobreposto ? INSTRUCAO_TEXTO_SOBREPOSTO : INSTRUCAO_TEXTO_NA_CENA,
+        INSTRUCAO_TELAS_SUGERIDAS,
       ].join(' ')
     : 'Estruture sempre as chaves: estrategia, angulo, legenda, cta, hashtags, alt_text. Escreva com qualidade profissional de copywriting, sempre em português do Brasil.';
   return [

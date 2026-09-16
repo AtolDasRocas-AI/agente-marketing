@@ -240,6 +240,26 @@ export async function gerarImagemIa(
   }
 }
 
+export async function melhorarTextoImagem(
+  contentVersionId: string,
+  textoOverlay: TextoOverlay,
+  instrucao?: string,
+): Promise<TextoOverlay> {
+  const { data, error } = await exigirSupabase().functions.invoke('marketing-melhorar-texto-imagem', {
+    body: {
+      content_version_id: contentVersionId,
+      texto_overlay: textoOverlay,
+      instrucao: instrucao?.trim() || undefined,
+      idempotency_key: crypto.randomUUID(),
+    },
+  });
+  if (error) throw new ErroAssistenteConteudo(await mensagemDeErroFuncao(error), 'INDISPONIVEL');
+  if (data?.codigo) {
+    throw new ErroAssistenteConteudo(data.mensagem ?? 'Não foi possível melhorar o texto.', data.codigo);
+  }
+  return data.texto_overlay as TextoOverlay;
+}
+
 export async function comporImagemComTexto(
   imagemBaseId: string,
   imagemCompostaBase64: string,

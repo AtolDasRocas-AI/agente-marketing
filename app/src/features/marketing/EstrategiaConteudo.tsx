@@ -5,7 +5,8 @@ import { obterRepositorioMarketingRemoto, type ConteudoMarketingRemoto } from '.
 import {
   arquivoParaBase64, carregarOrcamentoIa, comporImagemComTexto, configurarOrcamentoIa, decidirAprovacaoConteudo,
   formatarUsd, FORMATOS_IMAGEM, gerarConteudoIa, gerarImagemIa, listarAprovacoesConteudo, listarImagensGeradas,
-  listarVersoesIa, obterPapelMarketing, OPERACOES_IA, solicitarAprovacaoConteudo, TELAS_DO_APP, urlAssinadaImagem,
+  listarVersoesIa, melhorarTextoImagem, obterPapelMarketing, OPERACOES_IA, solicitarAprovacaoConteudo,
+  TELAS_DO_APP, urlAssinadaImagem,
   type AprovacaoConteudo, type FormatoImagem, type ImagemGerada, type OperacaoIa, type OrcamentoIa,
   type PapelMarketing, type TextoOverlay, type VersaoConteudoIa,
 } from './aiRemote';
@@ -22,6 +23,14 @@ const ROTULOS_OPERACAO: Record<OperacaoIa, string> = {
 function textoDaVersao(conteudo: Record<string, unknown>, chave: string) {
   const valor = conteudo[chave];
   return typeof valor === 'string' ? valor : '';
+}
+
+// A IA indica, a partir do briefing, quais telas do app fazem sentido neste post. Vira a
+// seleção inicial do revisor, que continua livre para trocar.
+function telasSugeridasDaVersao(conteudo: Record<string, unknown>): string[] {
+  const valor = conteudo.telas_sugeridas;
+  if (!Array.isArray(valor)) return [];
+  return valor.filter((tela): tela is string => typeof tela === 'string' && tela in TELAS_DO_APP).slice(0, 2);
 }
 
 function textoOverlayDaVersao(conteudo: Record<string, unknown>): TextoOverlay | null {
@@ -72,7 +81,13 @@ export function EstrategiaConteudoMarketing() {
   const [arquivoReferencia, setArquivoReferencia] = useState<Record<string, File | null>>({});
   const [informativo, setInformativo] = useState(false);
   const [formatoImagem, setFormatoImagem] = useState<FormatoImagem>('FEED');
-  const [telasSelecionadas, setTelasSelecionadas] = useState<string[]>([]);
+  // Por versão: cada prompt tem sua própria sugestão da IA, e a escolha manual só sobrescreve
+  // aquela versão (undefined = ainda usando a sugestão).
+  const [telasPorVersao, setTelasPorVersao] = useState<Record<string, string[]>>({});
+  // Texto editado à mão por versão (undefined = ainda usando o que a IA gerou).
+  const [textoEditado, setTextoEditado] = useState<Record<string, TextoOverlay>>({});
+  const [instrucaoMelhoria, setInstrucaoMelhoria] = useState<Record<string, string>>({});
+  const [melhorandoTexto, setMelhorandoTexto] = useState<string | null>(null);
   const [composicoesPreview, setComposicoesPreview] = useState<Record<string, string>>({});
   const [compondo, setCompondo] = useState<string | null>(null);
   const [salvandoComposicao, setSalvandoComposicao] = useState<string | null>(null);
@@ -177,14 +192,19 @@ export function EstrategiaConteudoMarketing() {
     }
   }
 
-  async function gerarImagem(versaoId: string, comAjuste = false) {
+  function telasDaVersao(versao: VersaoConteudoIa): string[] {
+    return telasPorVersao[versao.id] ?? telasSugeridasDaVersao(versao.conteudo);
+  }
+
+  async function gerarImagem(versao: VersaoConteudoIa, comAjuste = false) {
+    const versaoId = versao.id;
     setErro(''); setAviso(''); setGerandoImagem(versaoId);
     try {
       const arquivo = arquivoReferencia[versaoId] ?? undefined;
       await gerarImagemIa(versaoId, comAjuste ? {
         textoAjuste: textoAjuste[versaoId],
         imagemReferenciaBase64: arquivo ? await arquivoParaBase64(arquivo) : undefined,
-      } : undefined, formatoImagem, telasSelecionadas);
+      } : undefined, formatoImagem, telasDaVersao(versao));
       await recarregar();
       if (comAjuste) {
         setTextoAjuste((atual) => ({ ...atual, [versaoId]: '' }));
@@ -216,6 +236,28 @@ export function EstrategiaConteudoMarketing() {
     link.download = storagePath.split('/').pop() ?? 'imagem-atol.png';
     link.click();
     URL.revokeObjectURL(urlLocal);
+  }
+
+  function textoDeTrabalho(versao: VersaoConteudoIa): TextoOverlay | null {
+    return textoEditado[versao.id] ?? textoOverlayDaVersao(versao.conteudo);
+  }
+
+  function atualizarTexto(versaoId: string, atual: TextoOverlay, mudanca: Partial<TextoOverlay>) {
+    setTextoEditado((anterior) => ({ ...anterior, [versaoId]: { ...atual, ...mudanca } }));
+  }
+
+  async function melhorarTexto(versaoId: string, atual: TextoOverlay) {
+    setErro(''); setAviso(''); setMelhorandoTexto(versaoId);
+    try {
+      const sugestao = await melhorarTextoImagem(versaoId, atual, instrucaoMelhoria[versaoId]);
+      setTextoEditado((anterior) => ({ ...anterior, [versaoId]: sugestao }));
+      setInstrucaoMelhoria((anterior) => ({ ...anterior, [versaoId]: '' }));
+      setAviso('Texto reescrito pela IA. Revise antes de compor.');
+    } catch (causa) {
+      setErro(causa instanceof Error ? causa.message : 'Não foi possível melhorar o texto.');
+    } finally {
+      setMelhorandoTexto(null);
+    }
   }
 
   async function comporTexto(imagemBaseId: string, storagePath: string, textoOverlay: TextoOverlay) {
@@ -349,14 +391,52 @@ export function EstrategiaConteudoMarketing() {
                     return texto ? <p key={chave}><strong>{chave.replace('_', ' ')}:</strong> {texto}</p> : null;
                   })}
                   {(() => {
-                    const textoOverlay = textoOverlayDaVersao(versao.conteudo);
+                    const textoOverlay = textoDeTrabalho(versao);
                     if (!textoOverlay) return null;
                     return (
-                      <p>
-                        <strong>texto sobre a imagem:</strong>{' '}
-                        {textoOverlay.titulo ? `${textoOverlay.titulo} — ` : ''}
-                        {textoOverlay.itens.join(' · ')}
-                      </p>
+                      <div className="sx-field" style={{ marginTop: 8 }}>
+                        <label htmlFor={`overlay-titulo-${versao.id}`}>
+                          Texto sobre a imagem {textoEditado[versao.id] ? '(editado)' : '(gerado pela IA)'}
+                        </label>
+                        <input
+                          id={`overlay-titulo-${versao.id}`}
+                          className="sx-input"
+                          value={textoOverlay.titulo ?? ''}
+                          placeholder="Título (opcional)"
+                          onChange={(event) => atualizarTexto(versao.id, textoOverlay, { titulo: event.target.value })}
+                        />
+                        {textoOverlay.itens.map((item, indice) => (
+                          <input
+                            key={indice}
+                            className="sx-input"
+                            style={{ marginTop: 6 }}
+                            value={item}
+                            aria-label={`Item ${indice + 1}`}
+                            onChange={(event) => atualizarTexto(versao.id, textoOverlay, {
+                              itens: textoOverlay.itens.map((atual, i) => (i === indice ? event.target.value : atual)),
+                            })}
+                          />
+                        ))}
+                        <input
+                          className="sx-input"
+                          style={{ marginTop: 10 }}
+                          value={instrucaoMelhoria[versao.id] ?? ''}
+                          placeholder="O que melhorar? (opcional: mais curto, mais direto…)"
+                          onChange={(event) => setInstrucaoMelhoria((atual) => ({ ...atual, [versao.id]: event.target.value }))}
+                        />
+                        <button
+                          className="sx-btn sx-btn--ghost"
+                          type="button"
+                          style={{ marginTop: 8 }}
+                          onClick={() => void melhorarTexto(versao.id, textoOverlay)}
+                          disabled={melhorandoTexto === versao.id}
+                        >
+                          {melhorandoTexto === versao.id ? 'Melhorando…' : 'Melhorar texto com IA'}
+                        </button>
+                        <p className="sx-hint">
+                          Este é o texto exato que será desenhado sobre a imagem — nada é reescrito na composição.
+                        </p>
+                      </div>
                     );
                   })()}
                   {(() => {
@@ -387,25 +467,28 @@ export function EstrategiaConteudoMarketing() {
                           className="sx-input"
                           multiple
                           size={5}
-                          value={telasSelecionadas}
-                          onChange={(event) => setTelasSelecionadas(
-                            Array.from(event.target.selectedOptions, (opcao) => opcao.value).slice(0, 2),
-                          )}
+                          value={telasDaVersao(versao)}
+                          onChange={(event) => setTelasPorVersao((atual) => ({
+                            ...atual,
+                            [versao.id]: Array.from(event.target.selectedOptions, (opcao) => opcao.value).slice(0, 2),
+                          }))}
                         >
                           {Object.entries(TELAS_DO_APP).map(([valor, rotulo]) => (
                             <option key={valor} value={valor}>{rotulo}</option>
                           ))}
                         </select>
                         <p className="sx-hint">
-                          Só marque quando o post mostrar o app. Sem seleção, a cena é uma fotografia sem
-                          nenhuma interface — evita que o modelo desenhe uma moldura de aplicativo em volta.
+                          {telasPorVersao[versao.id]
+                            ? 'Seleção manual. '
+                            : 'Sugerido pela IA a partir do briefing — você pode trocar. '}
+                          Sem nenhuma tela marcada, a cena é uma fotografia sem interface nenhuma.
                         </p>
                       </div>
-                      <button className="sx-btn sx-btn--ghost" type="button" onClick={() => void gerarImagem(versao.id)} disabled={gerandoImagem === versao.id}>
+                      <button className="sx-btn sx-btn--ghost" type="button" onClick={() => void gerarImagem(versao)} disabled={gerandoImagem === versao.id}>
                         {gerandoImagem === versao.id ? 'Gerando imagem…' : 'Gerar imagem a partir deste prompt'}
                       </button>
                       {imagens.filter((img) => img.content_version_id === versao.id).map((img) => {
-                        const textoOverlay = textoOverlayDaVersao(versao.conteudo);
+                        const textoOverlay = textoDeTrabalho(versao);
                         const podeCompor = Boolean(textoOverlay) && !img.origem_imagem_id;
                         return (
                           <div key={img.id} style={{ marginTop: 8 }}>
@@ -487,7 +570,7 @@ export function EstrategiaConteudoMarketing() {
                             className="sx-btn sx-btn--ghost"
                             type="button"
                             style={{ marginTop: 8 }}
-                            onClick={() => void gerarImagem(versao.id, true)}
+                            onClick={() => void gerarImagem(versao, true)}
                             disabled={gerandoImagem === versao.id || (!textoAjuste[versao.id]?.trim() && !arquivoReferencia[versao.id])}
                           >
                             {gerandoImagem === versao.id ? 'Gerando…' : 'Gerar nova versão com ajuste'}
