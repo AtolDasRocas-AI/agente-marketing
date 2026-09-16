@@ -18,18 +18,25 @@ function mapearTipoErro(erro: ErroGraphApi | undefined): TipoErroImportacao {
   return 'ERRO_DESCONHECIDO';
 }
 
-// Matriz de métricas de insight por media_product_type (Onda 2), validada ao vivo em
-// 15-16/09/2026 contra developers.facebook.com/documentation/instagram-platform/reference/
-// instagram-media/insights (atualizada 11/09/2026) — só métricas confirmadas para
-// Instagram API com Login do Instagram (graph.instagram.com, o host usado neste projeto).
+// Matriz de métricas de insight por media_type (Onda 2, corrigida em produção 2026-09-16).
+// A tentativa original chaveava por media_product_type (FEED/REELS/STORY), mas esse campo
+// só existe para "Instagram API com Login do Facebook" — confirmado ao vivo em
+// developers.facebook.com/documentation/instagram-platform/reference/instagram-media
+// ("media_product_type... Disponível apenas para a API do Instagram com o Login do
+// Facebook."), que não é o tipo de login deste projeto (graph.instagram.com). Na prática,
+// o campo nunca vinha preenchido e a busca de insight nunca era sequer tentada, para
+// nenhum post — bug real encontrado em produção, não falta de dado da conta. media_type
+// (IMAGE/VIDEO/CAROUSEL_ALBUM) não tem essa restrição e é o que este arquivo já usa em
+// outro lugar (ex. capa do post), por isso vira o discriminador correto aqui também.
 // De fora de propósito: total_likes/total_comments/total_views (só Login do Facebook) e
 // impressions (obsoleta para mídia criada após 02/07/2024 — todo conteúdo novo daqui em
 // diante). STORY não entra: GET /{ig-user-id}/stories, a única forma documentada de listar
 // stories, exige Login do Facebook nesta mesma documentação — sem forma confirmada de
-// descobrir stories via Login do Instagram (ver bloqueio registrado no spec-kit).
-const METRICAS_POR_TIPO_PRODUTO: Record<string, string[]> = {
-  FEED: ['likes', 'comments', 'reach', 'saved', 'shares', 'total_interactions', 'views'],
-  REELS: ['likes', 'comments', 'reach', 'saved', 'shares', 'total_interactions', 'views', 'ig_reels_avg_watch_time'],
+// descobrir stories via Login do Instagram (investigação fechada, ver spec-kit).
+const METRICAS_POR_TIPO_MEDIA: Record<string, string[]> = {
+  IMAGE: ['likes', 'comments', 'reach', 'saved', 'shares', 'total_interactions', 'views'],
+  CAROUSEL_ALBUM: ['likes', 'comments', 'reach', 'saved', 'shares', 'total_interactions', 'views'],
+  VIDEO: ['likes', 'comments', 'reach', 'saved', 'shares', 'total_interactions', 'views', 'ig_reels_avg_watch_time'],
 };
 
 // Métricas de conta confirmadas para os dois tipos de login em developers.facebook.com/
@@ -51,8 +58,8 @@ function extrairValor(item: ItemInsight): number | undefined {
  * dado suficiente, métrica não aplicável etc.) simplesmente não entra no objeto — nunca
  * vira zero — e uma falha na chamada não derruba a importação dos campos básicos do post.
  */
-async function buscarInsightsMedia(mediaId: string, tipoProduto: string | null, token: string): Promise<Record<string, number>> {
-  const metricas = tipoProduto ? METRICAS_POR_TIPO_PRODUTO[tipoProduto] : undefined;
+async function buscarInsightsMedia(mediaId: string, mediaType: string | null, token: string): Promise<Record<string, number>> {
+  const metricas = mediaType ? METRICAS_POR_TIPO_MEDIA[mediaType] : undefined;
   if (!metricas || metricas.length === 0) return {};
   try {
     const resposta = await fetch(`${GRAPH}/${mediaId}/insights?metric=${metricas.join(',')}&access_token=${encodeURIComponent(token)}`);
@@ -158,7 +165,7 @@ Deno.serve(async (req) => {
     // media_url/thumbnail_url servem de capa na tela; expiram como qualquer URL da CDN do
     // Instagram, por isso o frontend (CapaPost) sempre tem fallback para ícone + rótulo.
     const campos =
-      'id,permalink,media_type,media_product_type,timestamp,like_count,comments_count,media_url,thumbnail_url,' +
+      'id,permalink,media_type,timestamp,like_count,comments_count,media_url,thumbnail_url,' +
       'children{media_url,thumbnail_url,media_type}';
     let url: string | null =
       `${GRAPH}/${account.ig_user_id}/media?fields=${campos}&limit=${LIMITE_PAGINA}&access_token=${encodeURIComponent(token)}`;
@@ -187,11 +194,11 @@ Deno.serve(async (req) => {
       }));
 
       // Um insight por mídia (custo aceitável no volume desta conta); mídia sem
-      // media_product_type reconhecido ou sem insight disponível não falha o lote.
+      // media_type reconhecido ou sem insight disponível não falha o lote.
       const insightsPorMidia = await Promise.all(itens.map((media) =>
         buscarInsightsMedia(
           String(media.id),
-          typeof media.media_product_type === 'string' ? media.media_product_type : null,
+          typeof media.media_type === 'string' ? media.media_type : null,
           token,
         ),
       ));
