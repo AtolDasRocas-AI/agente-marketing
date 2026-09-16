@@ -43,6 +43,11 @@ const sqlAccountDaily = await readFile(fileURLToPath(accountDailyUrl), 'utf8');
 // 0032 e 0034 (cron) não entram aqui: pg_cron/pg_net não existem no Postgres descartável do PGlite.
 const postAnalysisUrl = new URL('../supabase/migrations/0033_marketing_instagram_post_analysis.sql', import.meta.url);
 const sqlPostAnalysis = await readFile(fileURLToPath(postAnalysisUrl), 'utf8');
+// 0034 (cron) não entra aqui: pg_cron/pg_net não existem no Postgres descartável do PGlite.
+const referenciasMarcaUrl = new URL('../supabase/migrations/0035_marketing_referencias_marca.sql', import.meta.url);
+const sqlReferenciasMarca = await readFile(fileURLToPath(referenciasMarcaUrl), 'utf8');
+const composicaoTextoUrl = new URL('../supabase/migrations/0036_marketing_composicao_imagem_texto.sql', import.meta.url);
+const sqlComposicaoTexto = await readFile(fileURLToPath(composicaoTextoUrl), 'utf8');
 
 function exige(descricao, padrao) {
   assert.match(sql, padrao, `Migração 0013 sem garantia: ${descricao}`);
@@ -134,6 +139,15 @@ assert.match(sqlInsight, /marketing_decidir_insight/i);
 assert.match(sqlImagem, /create table public\.marketing_image_asset/i);
 assert.match(sqlImagem, /insert into storage\.buckets/i);
 assert.match(sqlImagem, /create policy marketing_imagens_select on storage\.objects/i);
+assert.equal(sqlReferenciasMarca.trimStart().includes('begin;'), true, 'A 0035 deve iniciar uma transação explícita.');
+assert.equal(sqlReferenciasMarca.trimEnd().endsWith('commit;'), true, 'A 0035 deve finalizar a transação explicitamente.');
+assert.match(sqlReferenciasMarca, /insert into storage\.buckets/i);
+assert.match(sqlReferenciasMarca, /create function public\.marketing_eh_membro_de_algum_workspace/i);
+assert.match(sqlReferenciasMarca, /create policy marketing_referencias_marca_select on storage\.objects/i);
+assert.equal(sqlComposicaoTexto.trimStart().includes('begin;'), true, 'A 0036 deve iniciar uma transação explícita.');
+assert.equal(sqlComposicaoTexto.trimEnd().endsWith('commit;'), true, 'A 0036 deve finalizar a transação explicitamente.');
+assert.match(sqlComposicaoTexto, /add column origem_imagem_id uuid references public\.marketing_image_asset\(id\)/i);
+assert.match(sqlComposicaoTexto, /add column texto_overlay jsonb/i);
 
 const tabelasRls0013 = [
   'marketing_workspace',
@@ -190,6 +204,7 @@ console.log(`Migração 0013: ${tabelasRls0013.length} tabelas com garantias est
 const usuarioA = '11111111-1111-4111-8111-111111111111';
 const usuarioB = '22222222-2222-4222-8222-222222222222';
 const usuarioC = '33333333-3333-4333-8333-333333333333';
+const usuarioSemWorkspace = '44444444-1111-4111-8111-444444444444';
 const workspaceKeyA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const workspaceKeyB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
@@ -289,6 +304,8 @@ try {
   await db.exec(sqlMediaDimension);
   await db.exec(sqlAccountDaily);
   await db.exec(sqlPostAnalysis);
+  await db.exec(sqlReferenciasMarca);
+  await db.exec(sqlComposicaoTexto);
 
   const hookInstitucional = await db.query(
     'select public.hook_permitir_somente_google_atol($1::jsonb) as resultado',
@@ -352,7 +369,10 @@ try {
   `, [tabelasRls]);
   assert.equal(rlsAtivo.rows[0].total, tabelasRls.length, 'RLS não ficou ativo em todas as tabelas.');
 
-  await db.query('insert into auth.users (id) values ($1), ($2), ($3)', [usuarioA, usuarioB, usuarioC]);
+  await db.query(
+    'insert into auth.users (id) values ($1), ($2), ($3), ($4)',
+    [usuarioA, usuarioB, usuarioC, usuarioSemWorkspace],
+  );
   await como(db, 'authenticated', usuarioA);
 
   const workspaceA = await db.query(
@@ -1281,6 +1301,91 @@ try {
   await db.exec('reset role;');
 
   console.log('Onda 5 (atol-analise-instagram-avancada): versionamento append-only da análise de post verificado no PostgreSQL descartável.');
+
+  // ---------------------------------------------------------------------------
+  // Migração 0035: bucket institucional de referências de marca — política
+  // deliberadamente diferente de marketing-imagens (0026): qualquer membro de
+  // QUALQUER workspace pode ler, porque são os mesmos poucos arquivos fixos
+  // (logo, clima visual, telas reais do app), sem dado nenhum por-workspace.
+  // ---------------------------------------------------------------------------
+  await db.exec('reset role;');
+  await como(db, 'service_role', '');
+  await db.query(
+    "insert into storage.objects (bucket_id, name) values ('marketing-referencias-marca', 'logotipo-marca.webp')",
+  );
+
+  await db.exec('reset role;');
+  await como(db, 'authenticated', usuarioB);
+  const referenciaVisivelMembroOutroWorkspace = await db.query(
+    "select id from storage.objects where bucket_id = 'marketing-referencias-marca'",
+  );
+  assert.equal(
+    referenciaVisivelMembroOutroWorkspace.rows.length, 1,
+    'Um membro de QUALQUER workspace deveria ver as referências de marca institucionais (política diferente de marketing-imagens).',
+  );
+
+  await db.exec('reset role;');
+  await como(db, 'authenticated', usuarioSemWorkspace);
+  const referenciaInvisivelSemMembership = await db.query(
+    "select id from storage.objects where bucket_id = 'marketing-referencias-marca'",
+  );
+  assert.equal(
+    referenciaInvisivelSemMembership.rows.length, 0,
+    'Um usuário autenticado sem nenhuma membership de workspace não deveria ver as referências de marca.',
+  );
+
+  await db.exec('reset role;');
+  await como(db, 'anon', '');
+  await esperaErro(
+    'O papel anônimo não deve ler as referências de marca',
+    () => db.query("select id from storage.objects where bucket_id = 'marketing-referencias-marca'"),
+    '42501',
+  );
+  await db.exec('reset role;');
+
+  console.log('Migração 0035: política "qualquer membro de qualquer workspace" das referências de marca verificada no PostgreSQL descartável.');
+
+  // ---------------------------------------------------------------------------
+  // Migração 0036: composição de texto sobre imagem — a imagem final aponta para
+  // a imagem de fundo que lhe deu origem (origem_imagem_id) e carrega o texto
+  // exato que foi desenhado por cima (texto_overlay), nunca "escrito" pela IA.
+  // ---------------------------------------------------------------------------
+  await db.exec('reset role;');
+  await como(db, 'service_role', '');
+  const imagemBase = await db.query(
+    `insert into public.marketing_image_asset (
+      workspace_id, content_item_id, content_version_id, ai_run_id, prompt_aprovado, modelo_ia, storage_path, gerado_por
+    ) values ($1, $2, $3, $4, 'prompt de fundo sem texto', 'modelo-teste', $5, $6) returning id`,
+    [
+      workspaceIdA, briefingId, versaoIa.rows[0].id, livreIniciada.rows[0].id,
+      `${workspaceIdA}/${livreIniciada.rows[0].id}-fundo.png`, usuarioA,
+    ],
+  );
+  const imagemComposta = await db.query(
+    `insert into public.marketing_image_asset (
+      workspace_id, content_item_id, content_version_id, ai_run_id, prompt_aprovado, modelo_ia,
+      storage_path, gerado_por, origem_imagem_id, texto_overlay
+    ) values ($1, $2, $3, $4, 'prompt de fundo sem texto', 'composicao-manual', $5, $6, $7, $8::jsonb)
+    returning id, origem_imagem_id, texto_overlay`,
+    [
+      workspaceIdA, briefingId, versaoIa.rows[0].id, livreIniciada.rows[0].id,
+      `${workspaceIdA}/${livreIniciada.rows[0].id}-composta.png`, usuarioA,
+      imagemBase.rows[0].id,
+      JSON.stringify({ titulo: 'Checklist semanal', itens: ['Testar água', 'Trocar 10%', 'Checar skimmer'] }),
+    ],
+  );
+  assert.equal(
+    imagemComposta.rows[0].origem_imagem_id, imagemBase.rows[0].id,
+    'A imagem composta deveria referenciar a imagem de fundo que lhe deu origem.',
+  );
+  assert.deepEqual(
+    paraObjeto(imagemComposta.rows[0].texto_overlay).itens,
+    ['Testar água', 'Trocar 10%', 'Checar skimmer'],
+    'O texto_overlay deveria persistir os itens exatos usados na composição.',
+  );
+
+  await db.exec('reset role;');
+  console.log('Migração 0036: composição de imagem com texto (origem_imagem_id/texto_overlay) verificada no PostgreSQL descartável.');
 
   console.log('Migrações 0013–0020: execução real e invariantes críticas verificadas no PostgreSQL descartável.');
 } finally {

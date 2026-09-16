@@ -3,11 +3,13 @@ import { Link, Navigate, useParams } from 'react-router-dom';
 import { Icone } from '../../components/Icone';
 import { obterRepositorioMarketingRemoto, type ConteudoMarketingRemoto } from './repositoryRemote';
 import {
-  carregarOrcamentoIa, configurarOrcamentoIa, decidirAprovacaoConteudo, formatarUsd, gerarConteudoIa, gerarImagemIa,
-  listarAprovacoesConteudo, listarImagensGeradas, listarVersoesIa, obterPapelMarketing, OPERACOES_IA,
-  solicitarAprovacaoConteudo, urlAssinadaImagem,
-  type AprovacaoConteudo, type ImagemGerada, type OperacaoIa, type OrcamentoIa, type PapelMarketing, type VersaoConteudoIa,
+  arquivoParaBase64, carregarOrcamentoIa, comporImagemComTexto, configurarOrcamentoIa, decidirAprovacaoConteudo,
+  formatarUsd, gerarConteudoIa, gerarImagemIa, listarAprovacoesConteudo, listarImagensGeradas, listarVersoesIa,
+  obterPapelMarketing, OPERACOES_IA, solicitarAprovacaoConteudo, urlAssinadaImagem,
+  type AprovacaoConteudo, type ImagemGerada, type OperacaoIa, type OrcamentoIa, type PapelMarketing,
+  type TextoOverlay, type VersaoConteudoIa,
 } from './aiRemote';
+import { comporImagemInformativa } from './composicaoImagem';
 
 const ROTULOS_OPERACAO: Record<OperacaoIa, string> = {
   ESTRATEGIA: 'Estratégia completa',
@@ -20,6 +22,17 @@ const ROTULOS_OPERACAO: Record<OperacaoIa, string> = {
 function textoDaVersao(conteudo: Record<string, unknown>, chave: string) {
   const valor = conteudo[chave];
   return typeof valor === 'string' ? valor : '';
+}
+
+function textoOverlayDaVersao(conteudo: Record<string, unknown>): TextoOverlay | null {
+  const valor = conteudo.texto_overlay;
+  if (!valor || typeof valor !== 'object') return null;
+  const objeto = valor as Record<string, unknown>;
+  if (!Array.isArray(objeto.itens) || !objeto.itens.every((item) => typeof item === 'string')) return null;
+  return {
+    titulo: typeof objeto.titulo === 'string' ? objeto.titulo : undefined,
+    itens: objeto.itens as string[],
+  };
 }
 
 interface DadosEstrategia {
@@ -54,6 +67,13 @@ export function EstrategiaConteudoMarketing() {
   const [papel, setPapel] = useState<PapelMarketing | null>(null);
   const [imagens, setImagens] = useState<ImagemGerada[]>([]);
   const [urlsImagem, setUrlsImagem] = useState<Record<string, string>>({});
+  const [imagemExpandida, setImagemExpandida] = useState<string | null>(null);
+  const [textoAjuste, setTextoAjuste] = useState<Record<string, string>>({});
+  const [arquivoReferencia, setArquivoReferencia] = useState<Record<string, File | null>>({});
+  const [informativo, setInformativo] = useState(false);
+  const [composicoesPreview, setComposicoesPreview] = useState<Record<string, string>>({});
+  const [compondo, setCompondo] = useState<string | null>(null);
+  const [salvandoComposicao, setSalvandoComposicao] = useState<string | null>(null);
   const [operacao, setOperacao] = useState<OperacaoIa>('ESTRATEGIA');
   const [mensal, setMensal] = useState('0');
   const [porExecucao, setPorExecucao] = useState('0');
@@ -133,7 +153,7 @@ export function EstrategiaConteudoMarketing() {
     setAviso('');
     setGerando(true);
     try {
-      await gerarConteudoIa(item.id, operacao);
+      await gerarConteudoIa(item.id, operacao, operacao === 'PROMPT_IMAGEM' && informativo);
       await recarregar();
       setAviso('Versão gerada e registrada para revisão humana.');
     } catch (causa) {
@@ -155,11 +175,19 @@ export function EstrategiaConteudoMarketing() {
     }
   }
 
-  async function gerarImagem(versaoId: string) {
+  async function gerarImagem(versaoId: string, comAjuste = false) {
     setErro(''); setAviso(''); setGerandoImagem(versaoId);
     try {
-      await gerarImagemIa(versaoId);
+      const arquivo = arquivoReferencia[versaoId] ?? undefined;
+      await gerarImagemIa(versaoId, comAjuste ? {
+        textoAjuste: textoAjuste[versaoId],
+        imagemReferenciaBase64: arquivo ? await arquivoParaBase64(arquivo) : undefined,
+      } : undefined);
       await recarregar();
+      if (comAjuste) {
+        setTextoAjuste((atual) => ({ ...atual, [versaoId]: '' }));
+        setArquivoReferencia((atual) => ({ ...atual, [versaoId]: null }));
+      }
       setAviso('Imagem gerada a partir do prompt aprovado.');
     } catch (causa) {
       setErro(causa instanceof Error ? causa.message : 'Não foi possível gerar a imagem.');
@@ -169,9 +197,53 @@ export function EstrategiaConteudoMarketing() {
   }
 
   async function abrirImagem(storagePath: string) {
-    if (urlsImagem[storagePath]) return;
+    if (urlsImagem[storagePath]) return urlsImagem[storagePath];
     const url = await urlAssinadaImagem(storagePath);
     if (url) setUrlsImagem((atual) => ({ ...atual, [storagePath]: url }));
+    return url;
+  }
+
+  async function baixarImagem(storagePath: string) {
+    const url = await abrirImagem(storagePath);
+    if (!url) return;
+    const resposta = await fetch(url);
+    const blob = await resposta.blob();
+    const urlLocal = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = urlLocal;
+    link.download = storagePath.split('/').pop() ?? 'imagem-atol.png';
+    link.click();
+    URL.revokeObjectURL(urlLocal);
+  }
+
+  async function comporTexto(imagemBaseId: string, storagePath: string, textoOverlay: TextoOverlay) {
+    setErro(''); setAviso(''); setCompondo(imagemBaseId);
+    try {
+      const url = await abrirImagem(storagePath);
+      if (!url) throw new Error('Não foi possível abrir a imagem de fundo.');
+      const composta = await comporImagemInformativa(url, textoOverlay);
+      setComposicoesPreview((atual) => ({ ...atual, [imagemBaseId]: composta }));
+    } catch (causa) {
+      setErro(causa instanceof Error ? causa.message : 'Não foi possível compor o texto sobre a imagem.');
+    } finally {
+      setCompondo(null);
+    }
+  }
+
+  async function salvarComposicao(imagemBaseId: string, textoOverlay: TextoOverlay) {
+    const composta = composicoesPreview[imagemBaseId];
+    if (!composta) return;
+    setErro(''); setAviso(''); setSalvandoComposicao(imagemBaseId);
+    try {
+      await comporImagemComTexto(imagemBaseId, composta, textoOverlay);
+      await recarregar();
+      setComposicoesPreview((atual) => Object.fromEntries(Object.entries(atual).filter(([id]) => id !== imagemBaseId)));
+      setAviso('Composição salva.');
+    } catch (causa) {
+      setErro(causa instanceof Error ? causa.message : 'Não foi possível salvar a composição.');
+    } finally {
+      setSalvandoComposicao(null);
+    }
   }
 
   async function decidir(approvalId: string, aprovar: boolean) {
@@ -225,6 +297,12 @@ export function EstrategiaConteudoMarketing() {
             {OPERACOES_IA.map((valor) => <option key={valor} value={valor}>{ROTULOS_OPERACAO[valor]}</option>)}
           </select>
         </div>
+        {operacao === 'PROMPT_IMAGEM' && (
+          <label className="sx-field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <input type="checkbox" checked={informativo} onChange={(event) => setInformativo(event.target.checked)} />
+            Este post é informativo (checklist/dica/estatística com texto sobre a imagem)
+          </label>
+        )}
         <button className="sx-btn sx-btn--primary" type="button" onClick={() => void gerar()} disabled={!pronto || !orcamentoAtivo || gerando}>
           <Icone nome="mais" tamanho={15} />
           {gerando ? 'Gerando…' : 'Gerar versão para revisão'}
@@ -269,6 +347,17 @@ export function EstrategiaConteudoMarketing() {
                     return texto ? <p key={chave}><strong>{chave.replace('_', ' ')}:</strong> {texto}</p> : null;
                   })}
                   {(() => {
+                    const textoOverlay = textoOverlayDaVersao(versao.conteudo);
+                    if (!textoOverlay) return null;
+                    return (
+                      <p>
+                        <strong>texto sobre a imagem:</strong>{' '}
+                        {textoOverlay.titulo ? `${textoOverlay.titulo} — ` : ''}
+                        {textoOverlay.itens.join(' · ')}
+                      </p>
+                    );
+                  })()}
+                  {(() => {
                     const aprovacao = aprovacoes.find((itemAprovacao) => itemAprovacao.content_version_id === versao.id);
                     if (!aprovacao) return <button className="sx-btn sx-btn--ghost" type="button" onClick={() => void enviarParaAprovacao(versao.id)}>Enviar para aprovação</button>;
                     if (aprovacao.decisao === 'PENDENTE') return <div className="sx-actions"><span className="sx-tag sx-tag--warn">Aguardando aprovação</span>{papel === 'ADMINISTRADOR' ? <><button className="sx-btn sx-btn--ghost" type="button" onClick={() => void decidir(aprovacao.id, true)}>Aprovar</button><button className="sx-btn sx-btn--ghost" type="button" onClick={() => void decidir(aprovacao.id, false)}>Devolver</button></> : <span className="sx-hint">A decisão é feita por um administrador.</span>}</div>;
@@ -279,14 +368,96 @@ export function EstrategiaConteudoMarketing() {
                       <button className="sx-btn sx-btn--ghost" type="button" onClick={() => void gerarImagem(versao.id)} disabled={gerandoImagem === versao.id}>
                         {gerandoImagem === versao.id ? 'Gerando imagem…' : 'Gerar imagem a partir deste prompt'}
                       </button>
-                      {imagens.filter((img) => img.content_version_id === versao.id).map((img) => (
-                        <div key={img.id} style={{ marginTop: 8 }}>
-                          {urlsImagem[img.storage_path]
-                            ? <img src={urlsImagem[img.storage_path]} alt="Gerada por IA a partir do prompt aprovado" style={{ maxWidth: '100%', borderRadius: 10 }} />
-                            : <button className="sx-btn" type="button" onClick={() => void abrirImagem(img.storage_path)}>Ver imagem gerada</button>}
-                          <p className="sx-hint">{img.modelo_ia} · {img.custo_usd != null ? `US$ ${Number(img.custo_usd).toFixed(4)}` : '—'}</p>
+                      {imagens.filter((img) => img.content_version_id === versao.id).map((img) => {
+                        const textoOverlay = textoOverlayDaVersao(versao.conteudo);
+                        const podeCompor = Boolean(textoOverlay) && !img.origem_imagem_id;
+                        return (
+                          <div key={img.id} style={{ marginTop: 8 }}>
+                            {urlsImagem[img.storage_path] ? (
+                              <>
+                                <img
+                                  src={urlsImagem[img.storage_path]}
+                                  alt="Gerada por IA a partir do prompt aprovado"
+                                  style={{ maxWidth: '100%', borderRadius: 10, cursor: 'zoom-in' }}
+                                  onClick={() => setImagemExpandida(urlsImagem[img.storage_path])}
+                                />
+                                <div className="sx-actions" style={{ marginTop: 6 }}>
+                                  <button className="sx-btn sx-btn--ghost" type="button" onClick={() => setImagemExpandida(urlsImagem[img.storage_path])}>Expandir</button>
+                                  <button className="sx-btn sx-btn--ghost" type="button" onClick={() => void baixarImagem(img.storage_path)}>Baixar</button>
+                                </div>
+                              </>
+                            ) : <button className="sx-btn" type="button" onClick={() => void abrirImagem(img.storage_path)}>Ver imagem gerada</button>}
+                            <p className="sx-hint">{img.modelo_ia} · {img.custo_usd != null ? `US$ ${Number(img.custo_usd).toFixed(4)}` : '—'}</p>
+                            {podeCompor && textoOverlay && (
+                              <div style={{ marginTop: 8 }}>
+                                {composicoesPreview[img.id] ? (
+                                  <>
+                                    <img
+                                      src={composicoesPreview[img.id]}
+                                      alt="Prévia da composição com o texto do briefing"
+                                      style={{ maxWidth: '100%', borderRadius: 10 }}
+                                    />
+                                    <div className="sx-actions" style={{ marginTop: 6 }}>
+                                      <button
+                                        className="sx-btn sx-btn--primary"
+                                        type="button"
+                                        onClick={() => void salvarComposicao(img.id, textoOverlay)}
+                                        disabled={salvandoComposicao === img.id}
+                                      >
+                                        {salvandoComposicao === img.id ? 'Salvando…' : 'Salvar composição'}
+                                      </button>
+                                      <button
+                                        className="sx-btn sx-btn--ghost"
+                                        type="button"
+                                        onClick={() => void comporTexto(img.id, img.storage_path, textoOverlay)}
+                                        disabled={compondo === img.id}
+                                      >
+                                        Refazer prévia
+                                      </button>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <button
+                                    className="sx-btn sx-btn--ghost"
+                                    type="button"
+                                    onClick={() => void comporTexto(img.id, img.storage_path, textoOverlay)}
+                                    disabled={compondo === img.id}
+                                  >
+                                    {compondo === img.id ? 'Compondo…' : 'Compor texto sobre a imagem'}
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {imagens.some((img) => img.content_version_id === versao.id) && (
+                        <div className="sx-field" style={{ marginTop: 12 }}>
+                          <label htmlFor={`ajuste-${versao.id}`}>Não gostou? Descreva o ajuste e gere de novo</label>
+                          <textarea
+                            id={`ajuste-${versao.id}`}
+                            className="sx-input"
+                            rows={2}
+                            value={textoAjuste[versao.id] ?? ''}
+                            onChange={(event) => setTextoAjuste((atual) => ({ ...atual, [versao.id]: event.target.value }))}
+                            placeholder="Ex.: cores mais vivas, tirar o texto da imagem, aproximar o produto…"
+                          />
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp"
+                            onChange={(event) => setArquivoReferencia((atual) => ({ ...atual, [versao.id]: event.target.files?.[0] ?? null }))}
+                          />
+                          <button
+                            className="sx-btn sx-btn--ghost"
+                            type="button"
+                            style={{ marginTop: 8 }}
+                            onClick={() => void gerarImagem(versao.id, true)}
+                            disabled={gerandoImagem === versao.id || (!textoAjuste[versao.id]?.trim() && !arquivoReferencia[versao.id])}
+                          >
+                            {gerandoImagem === versao.id ? 'Gerando…' : 'Gerar nova versão com ajuste'}
+                          </button>
                         </div>
-                      ))}
+                      )}
                     </div>
                   )}
                 </div>
@@ -300,6 +471,26 @@ export function EstrategiaConteudoMarketing() {
         <Link to={"/marketing/briefings/" + item.id} className="sx-btn sx-btn--ghost">Voltar ao briefing</Link>
         <Link to="/marketing/agenda" className="sx-btn sx-btn--ghost">Agenda</Link>
       </div>
+
+      {imagemExpandida && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Imagem expandida"
+          onClick={() => setImagemExpandida(null)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 1000, cursor: 'zoom-out', padding: 24,
+          }}
+        >
+          <img
+            src={imagemExpandida}
+            alt="Imagem gerada, em tamanho maior"
+            style={{ maxWidth: '92vw', maxHeight: '92vh', borderRadius: 8 }}
+          />
+        </div>
+      )}
     </div>
   );
 }

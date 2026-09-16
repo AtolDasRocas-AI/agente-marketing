@@ -139,12 +139,17 @@ export async function decidirAprovacaoConteudo(
   if (error) throw erroRemoto(error, 'Não foi possível registrar a decisão.');
 }
 
-export async function gerarConteudoIa(contentItemId: string, operacao: OperacaoIa): Promise<void> {
+export async function gerarConteudoIa(
+  contentItemId: string,
+  operacao: OperacaoIa,
+  comTextoSobreposto = false,
+): Promise<void> {
   const { data, error } = await exigirSupabase().functions.invoke('marketing-gerar-conteudo', {
     body: {
       content_item_id: contentItemId,
       operacao,
       idempotency_key: crypto.randomUUID(),
+      com_texto_sobreposto: comTextoSobreposto || undefined,
     },
   });
   if (error) throw new ErroAssistenteConteudo(await mensagemDeErroFuncao(error), 'INDISPONIVEL');
@@ -156,6 +161,11 @@ export async function gerarConteudoIa(contentItemId: string, operacao: OperacaoI
   }
 }
 
+export interface TextoOverlay {
+  titulo?: string;
+  itens: string[];
+}
+
 export interface ImagemGerada {
   id: string;
   content_version_id: string;
@@ -163,21 +173,33 @@ export interface ImagemGerada {
   modelo_ia: string;
   custo_usd: number | null;
   gerado_em: string;
+  origem_imagem_id: string | null;
+  texto_overlay: TextoOverlay | null;
 }
 
 export async function listarImagensGeradas(contentItemId: string): Promise<ImagemGerada[]> {
   const { data, error } = await exigirSupabase()
     .from('marketing_image_asset')
-    .select('id,content_version_id,storage_path,modelo_ia,custo_usd,gerado_em')
+    .select('id,content_version_id,storage_path,modelo_ia,custo_usd,gerado_em,origem_imagem_id,texto_overlay')
     .eq('content_item_id', contentItemId)
     .order('gerado_em', { ascending: false });
   if (error) throw erroRemoto(error, 'Não foi possível carregar as imagens geradas.');
   return (data ?? []) as ImagemGerada[];
 }
 
-export async function gerarImagemIa(contentVersionId: string): Promise<void> {
+export interface AjusteImagem {
+  textoAjuste?: string;
+  imagemReferenciaBase64?: string;
+}
+
+export async function gerarImagemIa(contentVersionId: string, ajuste?: AjusteImagem): Promise<void> {
   const { data, error } = await exigirSupabase().functions.invoke('marketing-gerar-imagem', {
-    body: { content_version_id: contentVersionId, idempotency_key: crypto.randomUUID() },
+    body: {
+      content_version_id: contentVersionId,
+      idempotency_key: crypto.randomUUID(),
+      texto_ajuste: ajuste?.textoAjuste || undefined,
+      imagem_referencia_base64: ajuste?.imagemReferenciaBase64 || undefined,
+    },
   });
   if (error) throw new ErroAssistenteConteudo(await mensagemDeErroFuncao(error), 'INDISPONIVEL');
   if (data?.codigo) {
@@ -186,6 +208,33 @@ export async function gerarImagemIa(contentVersionId: string): Promise<void> {
       data.codigo,
     );
   }
+}
+
+export async function comporImagemComTexto(
+  imagemBaseId: string,
+  imagemCompostaBase64: string,
+  textoOverlay: TextoOverlay,
+): Promise<void> {
+  const { data, error } = await exigirSupabase().functions.invoke('marketing-compor-imagem-texto', {
+    body: {
+      imagem_base_id: imagemBaseId,
+      imagem_composta_base64: imagemCompostaBase64,
+      texto_overlay: textoOverlay,
+    },
+  });
+  if (error) throw new ErroAssistenteConteudo(await mensagemDeErroFuncao(error), 'INDISPONIVEL');
+  if (data?.codigo) {
+    throw new ErroAssistenteConteudo(data.mensagem ?? 'Não foi possível salvar a composição.', data.codigo);
+  }
+}
+
+export function arquivoParaBase64(arquivo: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const leitor = new FileReader();
+    leitor.onload = () => resolve(String(leitor.result));
+    leitor.onerror = () => reject(new Error('Não foi possível ler a imagem de referência.'));
+    leitor.readAsDataURL(arquivo);
+  });
 }
 
 export async function urlAssinadaImagem(storagePath: string): Promise<string | null> {

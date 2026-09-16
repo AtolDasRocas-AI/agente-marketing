@@ -3,12 +3,20 @@
 //
 // Modelo confirmado no catálogo real do OpenRouter em 2026-09-15: google/gemini-3.1-flash-lite-image
 // ("Nano Banana 2 Lite"), $0,25/$30 por 1M tokens, exemplo real no playground custou $0,0336/imagem.
-// ATENÇÃO: o que NÃO foi confirmado é o formato exato da resposta (campo `images` na mensagem,
-// como data URI) — segue a convenção documentada para modelos multimodais, mas, diferente do
-// gateway de texto de marketing-gerar-conteudo, esta chamada nunca foi exercitada de verdade
-// contra a API. Testar com uma chamada real antes de confiar no parsing abaixo em produção.
+// Formato de resposta confirmado ao vivo em 2026-09-15 (campo `images`/data URI na mensagem).
+// ATENÇÃO NOVA: `texto_ajuste`/`imagem_referencia_base64` (regeneração com ajuste humano) usam
+// o mesmo endpoint com uma imagem de entrada (`image_url` no conteúdo da mensagem) — isso ainda
+// NÃO foi testado contra a API real (só o caminho sem imagem de referência foi). Se o modelo
+// ignorar a imagem de referência ou devolver erro, é o parsing/formato de entrada que precisa
+// de ajuste, não a lógica de aprovação/orçamento em volta.
+// ATENÇÃO NOVA 2: toda geração agora também anexa até 4 referências REAIS da marca (logo,
+// clima visual, telas do app — ver _shared/identidadeVisual.ts). O comportamento do modelo
+// com MÚLTIPLAS imagens de referência simultâneas nunca foi testado contra a API real (só 0
+// ou 1 imagem foi exercitado até hoje) — se o resultado sair ruim/confuso, desligar via
+// MARKETING_AI_IMAGE_BRAND_REFS_ENABLED=false antes de investigar mais a fundo.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { respostaCors, respostaJson } from '../_shared/ig.ts';
+import { carregarReferenciasDeMarca, referenciasDeMarcaHabilitadas } from '../_shared/identidadeVisual.ts';
 
 function numeroAmbiente(nome: string): number | null {
   const valor = Number(Deno.env.get(nome));
@@ -19,7 +27,15 @@ function codigoSeguro(erro: unknown): string {
   return 'FALHA_PROVEDOR';
 }
 
-interface Pedido { content_version_id?: string; idempotency_key?: string }
+interface Pedido {
+  content_version_id?: string;
+  idempotency_key?: string;
+  texto_ajuste?: string;
+  imagem_referencia_base64?: string;
+}
+
+const REGEX_DATA_URI_IMAGEM = /^data:image\/(png|jpeg|jpg|webp);base64,/;
+const TAMANHO_MAXIMO_REFERENCIA = 6_000_000;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return respostaCors();
@@ -40,6 +56,17 @@ Deno.serve(async (req) => {
   try {
     const pedido = await req.json() as Pedido;
     if (!pedido.content_version_id || !pedido.idempotency_key) return respostaJson({ codigo: 'PEDIDO_INVALIDO' }, 400);
+    if (pedido.texto_ajuste !== undefined && pedido.texto_ajuste.length > 2000) {
+      return respostaJson({ codigo: 'AJUSTE_MUITO_LONGO' }, 400);
+    }
+    if (pedido.imagem_referencia_base64 !== undefined) {
+      if (pedido.imagem_referencia_base64.length > TAMANHO_MAXIMO_REFERENCIA) {
+        return respostaJson({ codigo: 'IMAGEM_REFERENCIA_MUITO_GRANDE' }, 400);
+      }
+      if (!REGEX_DATA_URI_IMAGEM.test(pedido.imagem_referencia_base64)) {
+        return respostaJson({ codigo: 'IMAGEM_REFERENCIA_INVALIDA' }, 400);
+      }
+    }
 
     const auth = createClient(
       Deno.env.get('SUPABASE_URL')!,
@@ -102,6 +129,40 @@ Deno.serve(async (req) => {
       return respostaJson({ codigo: 'EXECUCAO_NAO_DISPONIVEL', ai_run_id: execucao.id }, 409);
     }
 
+    const referenciasMarca = referenciasDeMarcaHabilitadas()
+      ? await carregarReferenciasDeMarca(admin).catch((erro) => {
+          console.error('marketing-gerar-imagem: referencias de marca indisponiveis, seguindo sem elas:', erro);
+          return [];
+        })
+      : [];
+    const preambuloReferencias = referenciasMarca.length > 0
+      ? `As primeiras ${referenciasMarca.length} imagens anexadas nesta mensagem são referências REAIS e fixas ` +
+        'da identidade visual da marca ATOL (nesta ordem: logotipo oficial, foto que ilustra o clima visual do ' +
+        'produto real, e telas reais do aplicativo ATOL IA). Use-as só como âncora de estilo, paleta de cores, ' +
+        'iluminação e "clima" — nunca copie a cena, a composição ou qualquer texto de interface delas ' +
+        'literalmente.\n\n'
+      : '';
+
+    const temReferencia = Boolean(pedido.imagem_referencia_base64);
+    const promptFinal = preambuloReferencias + (pedido.texto_ajuste?.trim()
+      ? temReferencia
+        // Com imagem de referência, a instrução é de EDIÇÃO — reenviar a descrição
+        // original da cena (às vezes em outro idioma/intenção) confundia o modelo
+        // entre "recriar do zero" e "editar a imagem anexada". "Última" desambigua
+        // qual imagem é a de ajuste quando referências de marca também são anexadas.
+        ? `Use a última imagem anexada como base exata. Aplique apenas este ajuste, preservando o restante (composição, pessoas, cores, layout) o mais fielmente possível: ${pedido.texto_ajuste.trim()}`
+        : `${promptAprovado}\n\nAjuste pedido pelo revisor humano em relação à tentativa anterior: ${pedido.texto_ajuste.trim()}`
+      : promptAprovado);
+    // Ordem importa: referências de marca primeiro (âncora geral de estilo), imagem de
+    // ajuste do usuário sempre por último (âncora mais específica — "edite exatamente isto").
+    const conteudoMensagem: Array<Record<string, unknown>> = [
+      { type: 'text', text: promptFinal },
+      ...referenciasMarca,
+    ];
+    if (pedido.imagem_referencia_base64) {
+      conteudoMensagem.push({ type: 'image_url', image_url: { url: pedido.imagem_referencia_base64 } });
+    }
+
     const resposta = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -111,7 +172,7 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         model: modelo,
-        messages: [{ role: 'user', content: promptAprovado }],
+        messages: [{ role: 'user', content: conteudoMensagem }],
         modalities: ['image', 'text'],
       }),
     });

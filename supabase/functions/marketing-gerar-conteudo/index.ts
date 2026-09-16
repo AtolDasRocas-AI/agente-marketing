@@ -8,6 +8,7 @@ interface Pedido {
   content_item_id?: string;
   operacao?: string;
   idempotency_key?: string;
+  com_texto_sobreposto?: boolean;
 }
 
 function codigoSeguro(erro: unknown): string {
@@ -22,38 +23,66 @@ function numeroAmbiente(nome: string): number | null {
   return Number.isFinite(valor) && valor > 0 ? valor : null;
 }
 
-// Identidade visual real da ATOL: logotipo oficial (fornecido pelo responsável em 16/09/2026)
-// mais posts públicos de @atol.ia.oficial — app de aquarismo marinho com IA, "conectando
-// você ao seu aquário". Revalidar de tempos em tempos, já que o padrão visual pode evoluir.
-const IDENTIDADE_VISUAL_ATOL = 'A marca é a ATOL IA, um app de aquarismo marinho com IA ' +
-  '("conectando você ao seu aquário"). O símbolo da marca é um atol visto de cima: um anel de ' +
-  'recife colorido (corais-cérebro, corais-chifre e corais moles em amarelo, verde, laranja e ' +
-  'azul-turquesa) envolvendo uma lagoa turquesa com uma ilhota de areia clara e um pequeno ' +
-  'farol listrado de vermelho e branco; azul-marinho profundo é a cor de texto/contorno da ' +
-  'marca. Use essa paleta (turquesa da lagoa, areia clara, cores vivas de coral, azul-marinho) ' +
-  'como base cromática da cena, e — quando fizer sentido pro post, sem forçar — o motivo de ' +
-  'recife/atol/lagoa/farol como referência temática. A cena continua sendo uma fotografia ' +
-  'profissional realista (não um desenho ou ilustração como o logotipo em si). Não tente ' +
-  'redesenhar o logotipo nem escrever "ATOL" na imagem — isso é aplicado depois, por fora da ' +
-  'imagem gerada. ' +
-  'Siga o padrão visual que a conta do Instagram já usa hoje, sem inventar um estilo novo: ' +
-  'fundo escuro com brilho azul-esverdeado tipo aquário para cenas de produto/estilo de vida, ' +
-  'fotografia de produto limpa e bem iluminada para itens físicos ou virtuais de recife (rochas, ' +
-  'corais, acessórios), ou peça gráfica com estatística/selo para posts de divulgação do app. ' +
-  '"Profissionalizar" aqui significa melhorar nitidez, iluminação e composição dentro desse ' +
-  'padrão já estabelecido — nunca trocar o estilo nem abandonar essas características.';
+// Identidade visual REAL da ATOL — paleta e tipografia extraídas do próprio código do app
+// (reef-system-app/src/styles/theme.css, "dark navy + lagoon teal + living coral + sand
+// cream"), não uma aproximação de memória. Revalidar de tempos em tempos, já que o padrão
+// visual pode evoluir.
+const IDENTIDADE_VISUAL_ATOL = 'A marca é a ATOL IA, um app real de aquarismo marinho com IA ' +
+  '("conectando você ao seu aquário"). Esta é a identidade visual REAL do produto (paleta e ' +
+  'tipografia extraídas do próprio app, não uma aproximação): fundo escuro azul-marinho profundo ' +
+  '(#061820, #0a2230, #0e2a3f, #173b50), texto em areia clara (#f2e8d6), acentos turquesa/lagoa ' +
+  '(#5cc5be, #2ba7a8, #9fe0e1) e coral vivo (#ed9079, #dc6e58), com toques pontuais de areia ' +
+  '(#ebdfc9), musgo (#5c9d8e) e alga (#8fb873). O símbolo da marca é um atol visto de cima: um anel ' +
+  'de recife colorido (corais-cérebro, corais-chifre e corais moles em amarelo, verde, laranja e ' +
+  'azul-turquesa) envolvendo uma lagoa turquesa com uma ilhota de areia clara e um pequeno farol ' +
+  'listrado de vermelho e branco. Use essa paleta real como base cromática da cena e, quando fizer ' +
+  'sentido pro post sem forçar, o motivo de recife/atol/lagoa/farol como referência temática. A ' +
+  'cena continua sendo uma fotografia profissional realista (não um desenho ou ilustração como o ' +
+  'logotipo em si). Não tente redesenhar o logotipo nem escrever "ATOL" na imagem — isso é aplicado ' +
+  'depois, por fora da imagem gerada; a etapa seguinte de geração de imagem já recebe fotos e telas ' +
+  'reais do app como referência visual adicional. "Profissionalizar" aqui significa melhorar ' +
+  'nitidez, iluminação e composição dentro desse padrão real — nunca trocar o estilo nem abandonar ' +
+  'essas características.';
 
-function promptPara(item: Record<string, unknown>, operacao: string, conteudoAprovado: Record<string, unknown> | null): string {
+// Posts "informativos" (checklist/dica/estatística) não devem ter o texto desenhado pela
+// própria IA de imagem — modelos de geração de imagem erram grafia com frequência (é
+// exatamente o defeito que motivou isto: uma imagem de exemplo saiu com "Testas da Água",
+// "Fococato" etc.). O padrão de mercado é a IA gerar só o FUNDO, e o texto (exato, extraído
+// do briefing) ser composto por cima depois, de forma determinística (ver EstrategiaConteudo.tsx).
+const INSTRUCAO_TEXTO_SOBREPOSTO = [
+  'Este post é INFORMATIVO: o texto principal (título e itens) será desenhado por cima da ' +
+  'imagem depois, de forma separada e exata — a IA de imagem não escreve esse texto.',
+  'Por isso, estruture DUAS chaves: prompt_imagem (a cena de FUNDO) e texto_overlay (um ' +
+  'objeto com "titulo" opcional e "itens": um array de 3 a 5 strings curtas), extraídas do ' +
+  'conteúdo já rascunhado abaixo — nunca invente informação que não esteja lá.',
+  'Na descrição de prompt_imagem, instrua explicitamente para NÃO desenhar nenhum texto, ' +
+  'número, letra, rótulo ou legenda na cena, e deixar uma área visualmente limpa e com bom ' +
+  'contraste (ex.: terço inferior mais escuro/uniforme, ou uma lateral com menos elementos) ' +
+  'para receber esse texto por cima depois.',
+].join(' ');
+
+const INSTRUCAO_TEXTO_NA_CENA = 'Se a imagem tiver qualquer texto, legenda, botão, rótulo de ' +
+  'interface ou logotipo com texto visível, esse texto deve estar em português do Brasil — ' +
+  'nunca em inglês.';
+
+function promptPara(
+  item: Record<string, unknown>,
+  operacao: string,
+  conteudoAprovado: Record<string, unknown> | null,
+  comTextoSobreposto: boolean,
+): string {
   const instrucaoDeCampos = operacao === 'PROMPT_IMAGEM'
     ? [
-        'Estruture só a chave: prompt_imagem (descrição visual longa e detalhada, em português do Brasil, pronta para um gerador de imagem).',
+        comTextoSobreposto
+          ? 'Estruture as chaves: prompt_imagem (descrição visual longa e detalhada, em português do Brasil, pronta para um gerador de imagem) e texto_overlay (ver instrução específica abaixo).'
+          : 'Estruture só a chave: prompt_imagem (descrição visual longa e detalhada, em português do Brasil, pronta para um gerador de imagem).',
         'Ordem de prioridade ao decidir o que a imagem mostra, da mais importante pra menos importante — nunca inverta essa ordem: ',
         '(1) a ideia/mensagem central deste post (objetivo, pilar, hipótese e o conteúdo já rascunhado abaixo — estratégia, ângulo, legenda, CTA); a imagem existe para comunicar essa ideia específica, não para ser uma foto bonita genérica desconectada do assunto;',
         '(2) a identidade visual da marca ATOL: ' + IDENTIDADE_VISUAL_ATOL + ' Além disso, qualquer elemento visual, cor ou característica de marca que já apareça no conteúdo rascunhado abaixo também precisa se refletir na cena — a peça tem que ser reconhecível como ATOL, nunca uma imagem de banco de imagens sem marca nenhuma;',
         '(3) só depois de (1) e (2) estarem claros, refine com técnica de fotografia profissional (câmera, lente, luz, enquadramento) — isso é um meio de deixar a cena que já representa a ideia e a marca mais bonita e realista, nunca o assunto principal da descrição. Para cena fotográfica: câmera/lente coerentes com a tendência atual de fotografia comercial/editorial (ex.: "85mm f/1.4" pra retrato com fundo desfocado, "24-35mm" pra grande angular, lente macro pra detalhe de coral/peixe), luz, enquadramento, profundidade de campo. Para telas de app/mockup: fotografia de produto em estúdio.',
         'Nunca deixe o detalhe técnico de fotografia tomar tanto espaço da descrição que a cena perca a ligação com a ideia do post ou com a marca — se tiver que escolher, ideia e marca vêm sempre antes de qualquer refinamento fotográfico.',
         'A cena inteira precisa ser coerente: todos os elementos combinam entre si e com o briefing, sem nada forçado ou colado artificialmente só para "encaixar" um conceito. Evite qualquer característica que entregue a imagem como gerada por IA à primeira vista — anatomia e proporções corretas quando houver pessoas ou animais, sombras e iluminação consistentes, texturas realistas, nunca composição genérica de banco de imagens.',
-        'Se a imagem tiver qualquer texto, legenda, botão, rótulo de interface ou logotipo com texto visível, esse texto deve estar em português do Brasil — nunca em inglês.',
+        comTextoSobreposto ? INSTRUCAO_TEXTO_SOBREPOSTO : INSTRUCAO_TEXTO_NA_CENA,
       ].join(' ')
     : 'Estruture sempre as chaves: estrategia, angulo, legenda, cta, hashtags, alt_text. Escreva com qualidade profissional de copywriting, sempre em português do Brasil.';
   return [
@@ -186,7 +215,7 @@ Deno.serve(async (req) => {
         model: modelo,
         messages: [
           { role: 'system', content: 'Você produz conteúdo editorial estruturado para revisão humana.' },
-          { role: 'user', content: promptPara(item, pedido.operacao, conteudoAprovado) },
+          { role: 'user', content: promptPara(item, pedido.operacao, conteudoAprovado, Boolean(pedido.com_texto_sobreposto)) },
         ],
         max_tokens: 1200,
         temperature: 0.5,
