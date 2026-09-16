@@ -101,7 +101,14 @@ function promptPara(
       data_planejada: item.data_planejada,
       hipotese: item.hipotese,
     }),
-    ...(conteudoAprovado ? ['conteúdo já rascunhado para este post (use como base, não ignore):', JSON.stringify(conteudoAprovado)] : []),
+    ...(conteudoAprovado
+      ? [
+          'conteúdo já rascunhado para este post, agrupado por etapa editorial (ESTRATEGIA, ANGULO, LEGENDA, CTA). '
+          + 'Considere TODAS as etapas presentes, não só uma: a cena precisa refletir o ângulo editorial, a mensagem '
+          + 'da legenda e a chamada para ação em conjunto, nunca apenas a última etapa gerada.',
+          JSON.stringify(conteudoAprovado),
+        ]
+      : []),
   ].join('\n');
 }
 
@@ -158,18 +165,23 @@ Deno.serve(async (req) => {
     // O prompt de imagem precisa nascer do conteúdo editorial já rascunhado (estratégia/
     // ângulo/legenda/cta), não só do briefing abstrato — senão a cena perde a ligação com
     // o que a equipe já decidiu para este post especificamente.
+    // Pega a versão mais recente de CADA operação, identificada por etapa: antes só a
+    // última geração entrava, então pedir a imagem logo depois de gerar o CTA descartava
+    // estratégia, ângulo e legenda já aprovados.
     let conteudoAprovado: Record<string, unknown> | null = null;
     if (pedido.operacao === 'PROMPT_IMAGEM') {
-      const { data: versaoRecente, error: versaoErro } = await auth
+      const { data: versoes, error: versaoErro } = await auth
         .from('marketing_content_version')
-        .select('conteudo')
+        .select('operacao,conteudo')
         .eq('content_item_id', item.id)
         .neq('operacao', 'PROMPT_IMAGEM')
-        .order('criado_em', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .order('criado_em', { ascending: false });
       if (versaoErro) throw versaoErro;
-      conteudoAprovado = (versaoRecente?.conteudo as Record<string, unknown> | undefined) ?? null;
+      const porOperacao = new Map<string, unknown>();
+      for (const versao of versoes ?? []) {
+        if (!porOperacao.has(versao.operacao)) porOperacao.set(versao.operacao, versao.conteudo);
+      }
+      conteudoAprovado = porOperacao.size > 0 ? Object.fromEntries(porOperacao) : null;
     }
 
     admin = createClient(

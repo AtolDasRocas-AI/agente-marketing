@@ -18,11 +18,25 @@ import sharp from 'sharp';
 const BUCKET = 'marketing-referencias-marca';
 const LADO_MAXIMO = 1280;
 
+const jpeg = { formato: 'jpeg', contentType: 'image/jpeg' };
+
+// Referências base (sempre seguras em qualquer cena) + todas as telas reais do app, uma
+// por função. As telas só são anexadas à geração quando o post é sobre a tela do app —
+// ver supabase/functions/_shared/identidadeVisual.ts.
 const ATIVOS = [
   { origem: 'public/atol-mark.webp', destino: 'logotipo-marca.webp', formato: 'webp', contentType: 'image/webp' },
-  { origem: 'public/coral_reef_4k.webp', destino: 'clima-visual-recife.jpg', formato: 'jpeg', contentType: 'image/jpeg' },
-  { origem: 'design-assets/play/raw/01-dashboard.png', destino: 'tela-dashboard.jpg', formato: 'jpeg', contentType: 'image/jpeg' },
-  { origem: 'design-assets/play/raw/04-assistente.png', destino: 'tela-assistente-ia.jpg', formato: 'jpeg', contentType: 'image/jpeg' },
+  { origem: 'public/coral_reef_4k.webp', destino: 'clima-visual-recife.jpg', ...jpeg },
+  { origem: 'design-assets/play/raw/01-dashboard.png', destino: 'tela-dashboard.jpg', ...jpeg },
+  { origem: 'design-assets/play/raw/02-parametros.png', destino: 'tela-parametros.jpg', ...jpeg },
+  { origem: 'design-assets/play/raw/03-alertas.png', destino: 'tela-alertas.jpg', ...jpeg },
+  { origem: 'design-assets/play/raw/04-assistente.png', destino: 'tela-assistente-ia.jpg', ...jpeg },
+  { origem: 'design-assets/play/raw/05-habitantes.png', destino: 'tela-habitantes.jpg', ...jpeg },
+  { origem: 'design-assets/play/raw/06-diario.png', destino: 'tela-diario.jpg', ...jpeg },
+  { origem: 'design-assets/play/raw/07-reef-virtual.png', destino: 'tela-reef-virtual.jpg', ...jpeg },
+  { origem: 'design-assets/play/raw/08-criar-conteudo.png', destino: 'tela-criar-conteudo.jpg', ...jpeg },
+  { origem: 'prints_telas_atol/iluminacao_smart.png', destino: 'tela-iluminacao.jpg', ...jpeg },
+  { origem: 'prints_telas_atol/protocolos_tela.png', destino: 'tela-protocolos.jpg', ...jpeg },
+  { origem: 'prints_telas_atol/configuracoes_tela.png', destino: 'tela-configuracoes.jpg', ...jpeg },
 ];
 
 const raizProjeto = process.argv[2];

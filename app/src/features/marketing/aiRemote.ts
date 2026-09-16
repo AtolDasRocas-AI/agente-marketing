@@ -187,18 +187,48 @@ export async function listarImagensGeradas(contentItemId: string): Promise<Image
   return (data ?? []) as ImagemGerada[];
 }
 
+// Proporções reais do Instagram (2026): feed padrão é retrato 4:5, stories/reels 9:16.
+export const FORMATOS_IMAGEM = {
+  FEED: { rotulo: 'Feed (4:5)', largura: 1080, altura: 1350 },
+  STORY: { rotulo: 'Stories/Reels (9:16)', largura: 1080, altura: 1920 },
+} as const;
+
+export type FormatoImagem = keyof typeof FORMATOS_IMAGEM;
+
+// Mesmas chaves de TELAS_DO_APP em supabase/functions/_shared/identidadeVisual.ts.
+export const TELAS_DO_APP: Record<string, string> = {
+  DASHBOARD: 'Dashboard',
+  PARAMETROS: 'Parâmetros da água',
+  ALERTAS: 'Alertas',
+  ASSISTENTE_IA: 'Assistente de IA',
+  HABITANTES: 'Habitantes',
+  DIARIO: 'Diário',
+  REEF_VIRTUAL: 'Reef Virtual',
+  CRIAR_CONTEUDO: 'Criar conteúdo',
+  ILUMINACAO: 'Iluminação',
+  PROTOCOLOS: 'Protocolos',
+  CONFIGURACOES: 'Configurações',
+};
+
 export interface AjusteImagem {
   textoAjuste?: string;
   imagemReferenciaBase64?: string;
 }
 
-export async function gerarImagemIa(contentVersionId: string, ajuste?: AjusteImagem): Promise<void> {
+export async function gerarImagemIa(
+  contentVersionId: string,
+  ajuste?: AjusteImagem,
+  formato: FormatoImagem = 'FEED',
+  telasDoApp: string[] = [],
+): Promise<void> {
   const { data, error } = await exigirSupabase().functions.invoke('marketing-gerar-imagem', {
     body: {
       content_version_id: contentVersionId,
       idempotency_key: crypto.randomUUID(),
       texto_ajuste: ajuste?.textoAjuste || undefined,
       imagem_referencia_base64: ajuste?.imagemReferenciaBase64 || undefined,
+      formato,
+      telas_do_app: telasDoApp.length > 0 ? telasDoApp : undefined,
     },
   });
   if (error) throw new ErroAssistenteConteudo(await mensagemDeErroFuncao(error), 'INDISPONIVEL');

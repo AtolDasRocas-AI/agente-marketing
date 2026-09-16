@@ -16,7 +16,10 @@
 // MARKETING_AI_IMAGE_BRAND_REFS_ENABLED=false antes de investigar mais a fundo.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { respostaCors, respostaJson } from '../_shared/ig.ts';
-import { carregarReferenciasDeMarca, referenciasDeMarcaHabilitadas } from '../_shared/identidadeVisual.ts';
+import {
+  carregarReferenciasDeMarca, QUANTIDADE_REFERENCIAS_BASE, referenciasDeMarcaHabilitadas,
+  rotulosDasTelas, telasValidas,
+} from '../_shared/identidadeVisual.ts';
 
 function numeroAmbiente(nome: string): number | null {
   const valor = Number(Deno.env.get(nome));
@@ -32,10 +35,16 @@ interface Pedido {
   idempotency_key?: string;
   texto_ajuste?: string;
   imagem_referencia_base64?: string;
+  formato?: 'FEED' | 'STORY';
+  telas_do_app?: string[];
 }
 
 const REGEX_DATA_URI_IMAGEM = /^data:image\/(png|jpeg|jpg|webp);base64,/;
 const TAMANHO_MAXIMO_REFERENCIA = 6_000_000;
+
+// Proporções reais do Instagram em 2026 (feed padrão é retrato 4:5, não mais quadrado;
+// stories/reels é 9:16) — valores aceitos pela API de imagem (Gemini image_config).
+const ASPECT_RATIO_POR_FORMATO: Record<'FEED' | 'STORY', string> = { FEED: '4:5', STORY: '9:16' };
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return respostaCors();
@@ -129,18 +138,32 @@ Deno.serve(async (req) => {
       return respostaJson({ codigo: 'EXECUCAO_NAO_DISPONIVEL', ai_run_id: execucao.id }, 409);
     }
 
+    // As telas do app só entram quando o post é sobre a tela do app, e apenas as escolhidas.
+    // Anexá-las sempre fazia o modelo copiar o chrome do aplicativo (barra de status, header,
+    // navegação inferior) e desenhar a cena fotográfica dentro de uma moldura de app falsa.
+    const telasEscolhidas = telasValidas(pedido.telas_do_app);
     const referenciasMarca = referenciasDeMarcaHabilitadas()
-      ? await carregarReferenciasDeMarca(admin).catch((erro) => {
+      ? await carregarReferenciasDeMarca(admin, telasEscolhidas).catch((erro) => {
           console.error('marketing-gerar-imagem: referencias de marca indisponiveis, seguindo sem elas:', erro);
           return [];
         })
       : [];
+    const comTelas = telasEscolhidas.length > 0 && referenciasMarca.length > QUANTIDADE_REFERENCIAS_BASE;
     const preambuloReferencias = referenciasMarca.length > 0
       ? `As primeiras ${referenciasMarca.length} imagens anexadas nesta mensagem são referências REAIS e fixas ` +
-        'da identidade visual da marca ATOL (nesta ordem: logotipo oficial, foto que ilustra o clima visual do ' +
-        'produto real, e telas reais do aplicativo ATOL IA). Use-as só como âncora de estilo, paleta de cores, ' +
-        'iluminação e "clima" — nunca copie a cena, a composição ou qualquer texto de interface delas ' +
-        'literalmente.\n\n'
+        'da identidade visual da marca ATOL, nesta ordem: logotipo oficial, foto do clima visual do produto real'
+        + (comTelas ? `, e a(s) tela(s) real(is) do aplicativo ATOL IA (${rotulosDasTelas(telasEscolhidas)})` : '')
+        + '. Use-as apenas como âncora de paleta de cores, textura, iluminação e "clima" — nunca copie a cena nem '
+        + 'a composição delas. '
+        + (comTelas
+          ? 'A interface do app deve aparecer SOMENTE dentro da tela do aparelho retratado na cena (celular ou '
+            + 'tablet), jamais como moldura da imagem inteira: a peça final é uma fotografia, não a captura de '
+            + 'tela de um aplicativo. Nunca desenhe barra de status, cabeçalho de app ou barra de navegação '
+            + 'inferior sobre a foto.'
+          : 'Nenhum elemento de interface de aplicativo deve aparecer na cena: sem barra de status, cabeçalho, '
+            + 'ícones de app ou barra de navegação. A peça final é uma fotografia, não a captura de tela de um '
+            + 'aplicativo.')
+        + '\n\n'
       : '';
 
     const temReferencia = Boolean(pedido.imagem_referencia_base64);
@@ -174,6 +197,7 @@ Deno.serve(async (req) => {
         model: modelo,
         messages: [{ role: 'user', content: conteudoMensagem }],
         modalities: ['image', 'text'],
+        image_config: { aspect_ratio: ASPECT_RATIO_POR_FORMATO[pedido.formato ?? 'FEED'] ?? '4:5' },
       }),
     });
     const corpo = await resposta.json();

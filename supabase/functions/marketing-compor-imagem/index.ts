@@ -1,8 +1,9 @@
-// Persiste a composição determinística de texto sobre uma imagem já gerada (posts
-// "informativos" — checklist/dica/estatística). O texto exato do briefing é desenhado no
-// navegador, com a tipografia e as cores reais da marca (ver EstrategiaConteudo.tsx); esta
-// function só recebe o PNG final já pronto e grava. Nunca é uma chamada de IA — por isso
-// não passa pelos RPCs de orçamento (marketing_iniciar_execucao_ia_livre), e o custo é 0.
+// Persiste uma composição determinística feita no navegador sobre uma imagem já gerada —
+// hoje dois casos: (1) posts "informativos", com o texto exato do briefing desenhado por
+// cima (texto_overlay presente); (2) "device mockup", um screenshot real do app colado
+// sobre a área reservada na cena (texto_overlay ausente). Nos dois casos, esta function só
+// recebe o PNG final já pronto e grava — nunca é uma chamada de IA, por isso não passa
+// pelos RPCs de orçamento (marketing_iniciar_execucao_ia_livre), e o custo é sempre 0.
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { respostaCors, respostaJson } from '../_shared/ig.ts';
 
@@ -54,7 +55,7 @@ Deno.serve(async (req) => {
     ) {
       return respostaJson({ codigo: 'IMAGEM_COMPOSTA_INVALIDA' }, 400);
     }
-    if (!textoOverlayValido(pedido.texto_overlay)) {
+    if (pedido.texto_overlay !== undefined && !textoOverlayValido(pedido.texto_overlay)) {
       return respostaJson({ codigo: 'TEXTO_OVERLAY_INVALIDO' }, 400);
     }
 
@@ -100,13 +101,13 @@ Deno.serve(async (req) => {
       storage_path: caminho,
       gerado_por: usuario.id,
       origem_imagem_id: imagemBase.id,
-      texto_overlay: pedido.texto_overlay,
+      texto_overlay: pedido.texto_overlay ?? null,
     }).select().single();
     if (assetErro) throw assetErro;
 
     return respostaJson({ asset });
   } catch (erro) {
-    console.error('marketing-compor-imagem-texto:', erro);
+    console.error('marketing-compor-imagem:', erro);
     return respostaJson({
       codigo: 'COMPOSICAO_INDISPONIVEL',
       mensagem: 'Não foi possível salvar a composição agora.',

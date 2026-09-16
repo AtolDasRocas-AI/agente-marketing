@@ -2,9 +2,8 @@
 // determinística — nunca pedindo para a própria IA de imagem "escrever" o texto (ela erra
 // grafia com frequência). Usa as fontes e cores reais da marca ATOL (src/styles/theme.css
 // do app real), carregadas de app/public/fonts.
-import type { TextoOverlay } from './aiRemote';
+import { FORMATOS_IMAGEM, type FormatoImagem, type TextoOverlay } from './aiRemote';
 
-const LADO_CANVAS = 1080;
 const MARGEM = 64;
 
 // Paleta real da marca (ver IDENTIDADE_VISUAL_ATOL em marketing-gerar-conteudo).
@@ -58,34 +57,39 @@ function quebrarLinhas(ctx: CanvasRenderingContext2D, texto: string, larguraMaxi
   return linhas;
 }
 
-export async function comporImagemInformativa(urlImagemFundo: string, textoOverlay: TextoOverlay): Promise<string> {
+export async function comporImagemInformativa(
+  urlImagemFundo: string,
+  textoOverlay: TextoOverlay,
+  formato: FormatoImagem = 'FEED',
+): Promise<string> {
   await carregarFontesDeMarca();
   const imagem = await carregarImagem(urlImagemFundo);
 
+  const { largura: larguraCanvas, altura: alturaCanvas } = FORMATOS_IMAGEM[formato];
   const canvas = document.createElement('canvas');
-  canvas.width = LADO_CANVAS;
-  canvas.height = LADO_CANVAS;
+  canvas.width = larguraCanvas;
+  canvas.height = alturaCanvas;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Este navegador não suporta a composição de imagem.');
 
   // Fundo cobrindo o canvas inteiro (equivalente a object-fit: cover).
-  const escala = Math.max(LADO_CANVAS / imagem.width, LADO_CANVAS / imagem.height);
+  const escala = Math.max(larguraCanvas / imagem.width, alturaCanvas / imagem.height);
   const largura = imagem.width * escala;
   const altura = imagem.height * escala;
-  ctx.drawImage(imagem, (LADO_CANVAS - largura) / 2, (LADO_CANVAS - altura) / 2, largura, altura);
+  ctx.drawImage(imagem, (larguraCanvas - largura) / 2, (alturaCanvas - altura) / 2, largura, altura);
 
   // Faixa de contraste na base — sempre aplicada, porque o fundo gerado por IA pode ter
   // qualquer luminosidade onde o texto cairia.
-  const alturaFaixa = LADO_CANVAS * 0.5;
-  const gradiente = ctx.createLinearGradient(0, LADO_CANVAS - alturaFaixa, 0, LADO_CANVAS);
+  const alturaFaixa = alturaCanvas * 0.5;
+  const gradiente = ctx.createLinearGradient(0, alturaCanvas - alturaFaixa, 0, alturaCanvas);
   gradiente.addColorStop(0, COR_FAIXA_INICIO);
   gradiente.addColorStop(0.35, COR_FAIXA_MEIO);
   gradiente.addColorStop(1, COR_FAIXA_FIM);
   ctx.fillStyle = gradiente;
-  ctx.fillRect(0, LADO_CANVAS - alturaFaixa, LADO_CANVAS, alturaFaixa);
+  ctx.fillRect(0, alturaCanvas - alturaFaixa, larguraCanvas, alturaFaixa);
 
-  const larguraTexto = LADO_CANVAS - MARGEM * 2;
-  let y = LADO_CANVAS - alturaFaixa + 56;
+  const larguraTexto = larguraCanvas - MARGEM * 2;
+  let y = alturaCanvas - alturaFaixa + 56;
 
   if (textoOverlay.titulo) {
     ctx.fillStyle = COR_TEXTO;

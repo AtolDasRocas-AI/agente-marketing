@@ -4,10 +4,10 @@ import { Icone } from '../../components/Icone';
 import { obterRepositorioMarketingRemoto, type ConteudoMarketingRemoto } from './repositoryRemote';
 import {
   arquivoParaBase64, carregarOrcamentoIa, comporImagemComTexto, configurarOrcamentoIa, decidirAprovacaoConteudo,
-  formatarUsd, gerarConteudoIa, gerarImagemIa, listarAprovacoesConteudo, listarImagensGeradas, listarVersoesIa,
-  obterPapelMarketing, OPERACOES_IA, solicitarAprovacaoConteudo, urlAssinadaImagem,
-  type AprovacaoConteudo, type ImagemGerada, type OperacaoIa, type OrcamentoIa, type PapelMarketing,
-  type TextoOverlay, type VersaoConteudoIa,
+  formatarUsd, FORMATOS_IMAGEM, gerarConteudoIa, gerarImagemIa, listarAprovacoesConteudo, listarImagensGeradas,
+  listarVersoesIa, obterPapelMarketing, OPERACOES_IA, solicitarAprovacaoConteudo, TELAS_DO_APP, urlAssinadaImagem,
+  type AprovacaoConteudo, type FormatoImagem, type ImagemGerada, type OperacaoIa, type OrcamentoIa,
+  type PapelMarketing, type TextoOverlay, type VersaoConteudoIa,
 } from './aiRemote';
 import { comporImagemInformativa } from './composicaoImagem';
 
@@ -71,6 +71,8 @@ export function EstrategiaConteudoMarketing() {
   const [textoAjuste, setTextoAjuste] = useState<Record<string, string>>({});
   const [arquivoReferencia, setArquivoReferencia] = useState<Record<string, File | null>>({});
   const [informativo, setInformativo] = useState(false);
+  const [formatoImagem, setFormatoImagem] = useState<FormatoImagem>('FEED');
+  const [telasSelecionadas, setTelasSelecionadas] = useState<string[]>([]);
   const [composicoesPreview, setComposicoesPreview] = useState<Record<string, string>>({});
   const [compondo, setCompondo] = useState<string | null>(null);
   const [salvandoComposicao, setSalvandoComposicao] = useState<string | null>(null);
@@ -182,7 +184,7 @@ export function EstrategiaConteudoMarketing() {
       await gerarImagemIa(versaoId, comAjuste ? {
         textoAjuste: textoAjuste[versaoId],
         imagemReferenciaBase64: arquivo ? await arquivoParaBase64(arquivo) : undefined,
-      } : undefined);
+      } : undefined, formatoImagem, telasSelecionadas);
       await recarregar();
       if (comAjuste) {
         setTextoAjuste((atual) => ({ ...atual, [versaoId]: '' }));
@@ -221,7 +223,7 @@ export function EstrategiaConteudoMarketing() {
     try {
       const url = await abrirImagem(storagePath);
       if (!url) throw new Error('Não foi possível abrir a imagem de fundo.');
-      const composta = await comporImagemInformativa(url, textoOverlay);
+      const composta = await comporImagemInformativa(url, textoOverlay, formatoImagem);
       setComposicoesPreview((atual) => ({ ...atual, [imagemBaseId]: composta }));
     } catch (causa) {
       setErro(causa instanceof Error ? causa.message : 'Não foi possível compor o texto sobre a imagem.');
@@ -365,6 +367,40 @@ export function EstrategiaConteudoMarketing() {
                   })()}
                   {versao.operacao === 'PROMPT_IMAGEM' && aprovacoes.some((a) => a.content_version_id === versao.id && a.decisao === 'APROVADO') && (
                     <div style={{ marginTop: 10 }}>
+                      <div className="sx-field">
+                        <label htmlFor={`formato-${versao.id}`}>Formato da imagem</label>
+                        <select
+                          id={`formato-${versao.id}`}
+                          className="sx-input"
+                          value={formatoImagem}
+                          onChange={(event) => setFormatoImagem(event.target.value as FormatoImagem)}
+                        >
+                          {Object.entries(FORMATOS_IMAGEM).map(([valor, { rotulo }]) => (
+                            <option key={valor} value={valor}>{rotulo}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="sx-field">
+                        <label htmlFor={`telas-${versao.id}`}>Telas reais do app como referência (até 2)</label>
+                        <select
+                          id={`telas-${versao.id}`}
+                          className="sx-input"
+                          multiple
+                          size={5}
+                          value={telasSelecionadas}
+                          onChange={(event) => setTelasSelecionadas(
+                            Array.from(event.target.selectedOptions, (opcao) => opcao.value).slice(0, 2),
+                          )}
+                        >
+                          {Object.entries(TELAS_DO_APP).map(([valor, rotulo]) => (
+                            <option key={valor} value={valor}>{rotulo}</option>
+                          ))}
+                        </select>
+                        <p className="sx-hint">
+                          Só marque quando o post mostrar o app. Sem seleção, a cena é uma fotografia sem
+                          nenhuma interface — evita que o modelo desenhe uma moldura de aplicativo em volta.
+                        </p>
+                      </div>
                       <button className="sx-btn sx-btn--ghost" type="button" onClick={() => void gerarImagem(versao.id)} disabled={gerandoImagem === versao.id}>
                         {gerandoImagem === versao.id ? 'Gerando imagem…' : 'Gerar imagem a partir deste prompt'}
                       </button>
