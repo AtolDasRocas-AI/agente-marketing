@@ -24,7 +24,7 @@ function numeroAmbiente(nome: string): number | null {
 
 function promptPara(item: Record<string, unknown>, operacao: string): string {
   const instrucaoDeCampos = operacao === 'PROMPT_IMAGEM'
-    ? 'Estruture só a chave: prompt_imagem (descrição visual detalhada, em inglês, pronta para um gerador de imagem).'
+    ? 'Estruture só a chave: prompt_imagem (descrição visual detalhada, em português do Brasil, pronta para um gerador de imagem). Se a imagem tiver qualquer texto, legenda, botão, rótulo de interface ou logotipo com texto visível, esse texto deve estar em português do Brasil — nunca em inglês.'
     : 'Estruture sempre as chaves: estrategia, angulo, legenda, cta, hashtags, alt_text.';
   return [
     'Você é o assistente editorial da ATOL. Responda exclusivamente JSON válido, sem markdown.',
