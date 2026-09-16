@@ -22,13 +22,13 @@ function numeroAmbiente(nome: string): number | null {
   return Number.isFinite(valor) && valor > 0 ? valor : null;
 }
 
-function promptPara(item: Record<string, unknown>, operacao: string): string {
+function promptPara(item: Record<string, unknown>, operacao: string, conteudoAprovado: Record<string, unknown> | null): string {
   const instrucaoDeCampos = operacao === 'PROMPT_IMAGEM'
     ? [
         'Estruture só a chave: prompt_imagem (descrição visual longa e detalhada, em português do Brasil, pronta para um gerador de imagem).',
-        'Escreva como um diretor de fotografia profissional brifando o gerador: para toda cena fotográfica (não para mockups de interface ou peças só gráficas/tipográficas), especifique câmera e lente coerentes com a tendência atual de fotografia comercial/editorial — por exemplo "85mm f/1.4" para retrato com fundo desfocado, "24-35mm" para grande angular de ambiente, ou lente macro para detalhe de coral/peixe —, tipo e direção da luz (natural, hora dourada, softbox, contraluz), enquadramento, profundidade de campo e o estilo geral (comercial de alto padrão, editorial, cinematográfico).',
-        'Para telas de app ou mockup de interface, descreva como fotografia de produto em estúdio (fundo limpo, luz suave e uniforme, ângulo de apresentação) em vez de câmera/lente de cena.',
-        'Pense em todos os detalhes antes de escrever: composição, cores, textura, iluminação e nível de realismo — o resultado deve parecer uma fotografia profissional real, não uma ilustração genérica de IA.',
+        'Prioridade máxima: a cena descrita tem que ser uma representação direta e específica do briefing e do conteúdo já rascunhado abaixo (estratégia, ângulo, legenda e CTA, quando existirem) — nunca uma cena genérica de estoque desconectada do assunto. Releia tudo com atenção antes de escrever; a imagem deve visualizar exatamente essa ideia, não uma interpretação livre ou só o tema geral do pilar.',
+        'Só depois de definir a cena específica, refine a descrição como um diretor de fotografia profissional: para cena fotográfica (não mockup de interface), especifique câmera e lente coerentes com a tendência atual de fotografia comercial/editorial — por exemplo "85mm f/1.4" para retrato com fundo desfocado, "24-35mm" para grande angular de ambiente, ou lente macro para detalhe de coral/peixe —, tipo e direção da luz (natural, hora dourada, softbox, contraluz), enquadramento, profundidade de campo e o estilo geral (comercial de alto padrão, editorial, cinematográfico). Para telas de app ou mockup de interface, descreva como fotografia de produto em estúdio (fundo limpo, luz suave e uniforme) em vez de câmera/lente de cena.',
+        'A cena inteira precisa ser coerente: todos os elementos combinam entre si e com o briefing, sem nada forçado, fora de contexto ou colado artificialmente só para "encaixar" um conceito. Evite qualquer característica que entregue a imagem como gerada por IA à primeira vista — anatomia e proporções corretas quando houver pessoas ou animais, sombras e iluminação consistentes em toda a cena, texturas realistas, nunca composição genérica de banco de imagens. O resultado deve parecer uma fotografia profissional real, bem composta e montada, indistinguível de uma foto comercial de verdade.',
         'Se a imagem tiver qualquer texto, legenda, botão, rótulo de interface ou logotipo com texto visível, esse texto deve estar em português do Brasil — nunca em inglês.',
       ].join(' ')
     : 'Estruture sempre as chaves: estrategia, angulo, legenda, cta, hashtags, alt_text. Escreva com qualidade profissional de copywriting, sempre em português do Brasil.';
@@ -48,6 +48,7 @@ function promptPara(item: Record<string, unknown>, operacao: string): string {
       data_planejada: item.data_planejada,
       hipotese: item.hipotese,
     }),
+    ...(conteudoAprovado ? ['conteúdo já rascunhado para este post (use como base, não ignore):', JSON.stringify(conteudoAprovado)] : []),
   ].join('\n');
 }
 
@@ -101,6 +102,23 @@ Deno.serve(async (req) => {
       }, 422);
     }
 
+    // O prompt de imagem precisa nascer do conteúdo editorial já rascunhado (estratégia/
+    // ângulo/legenda/cta), não só do briefing abstrato — senão a cena perde a ligação com
+    // o que a equipe já decidiu para este post especificamente.
+    let conteudoAprovado: Record<string, unknown> | null = null;
+    if (pedido.operacao === 'PROMPT_IMAGEM') {
+      const { data: versaoRecente, error: versaoErro } = await auth
+        .from('marketing_content_version')
+        .select('conteudo')
+        .eq('content_item_id', item.id)
+        .neq('operacao', 'PROMPT_IMAGEM')
+        .order('criado_em', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (versaoErro) throw versaoErro;
+      conteudoAprovado = (versaoRecente?.conteudo as Record<string, unknown> | undefined) ?? null;
+    }
+
     admin = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
@@ -144,7 +162,7 @@ Deno.serve(async (req) => {
         model: modelo,
         messages: [
           { role: 'system', content: 'Você produz conteúdo editorial estruturado para revisão humana.' },
-          { role: 'user', content: promptPara(item, pedido.operacao) },
+          { role: 'user', content: promptPara(item, pedido.operacao, conteudoAprovado) },
         ],
         max_tokens: 1200,
         temperature: 0.5,
