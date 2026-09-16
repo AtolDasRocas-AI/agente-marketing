@@ -63,6 +63,7 @@ async function gerarAnalise(
       'Você é o agente de análise de posts da ATOL. Leia o desempenho deste post e escreva uma leitura qualitativa',
       'curta (pontos fortes/fracos do que pode explicar o resultado) e uma sugestão prática para o próximo conteúdo parecido.',
       'Nunca afirme causalidade certa — é uma leitura para revisão humana, não uma conclusão definitiva.',
+      'Todo o texto da resposta deve estar em português do Brasil, nunca em inglês ou outro idioma.',
       'Responda só JSON com as chaves: analise (string, até 3 frases), sugestao (string, 1-2 frases).',
       'Dados do post:',
       JSON.stringify({

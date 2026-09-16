@@ -24,11 +24,18 @@ function numeroAmbiente(nome: string): number | null {
 
 function promptPara(item: Record<string, unknown>, operacao: string): string {
   const instrucaoDeCampos = operacao === 'PROMPT_IMAGEM'
-    ? 'Estruture só a chave: prompt_imagem (descrição visual detalhada, em português do Brasil, pronta para um gerador de imagem). Se a imagem tiver qualquer texto, legenda, botão, rótulo de interface ou logotipo com texto visível, esse texto deve estar em português do Brasil — nunca em inglês.'
-    : 'Estruture sempre as chaves: estrategia, angulo, legenda, cta, hashtags, alt_text.';
+    ? [
+        'Estruture só a chave: prompt_imagem (descrição visual longa e detalhada, em português do Brasil, pronta para um gerador de imagem).',
+        'Escreva como um diretor de fotografia profissional brifando o gerador: para toda cena fotográfica (não para mockups de interface ou peças só gráficas/tipográficas), especifique câmera e lente coerentes com a tendência atual de fotografia comercial/editorial — por exemplo "85mm f/1.4" para retrato com fundo desfocado, "24-35mm" para grande angular de ambiente, ou lente macro para detalhe de coral/peixe —, tipo e direção da luz (natural, hora dourada, softbox, contraluz), enquadramento, profundidade de campo e o estilo geral (comercial de alto padrão, editorial, cinematográfico).',
+        'Para telas de app ou mockup de interface, descreva como fotografia de produto em estúdio (fundo limpo, luz suave e uniforme, ângulo de apresentação) em vez de câmera/lente de cena.',
+        'Pense em todos os detalhes antes de escrever: composição, cores, textura, iluminação e nível de realismo — o resultado deve parecer uma fotografia profissional real, não uma ilustração genérica de IA.',
+        'Se a imagem tiver qualquer texto, legenda, botão, rótulo de interface ou logotipo com texto visível, esse texto deve estar em português do Brasil — nunca em inglês.',
+      ].join(' ')
+    : 'Estruture sempre as chaves: estrategia, angulo, legenda, cta, hashtags, alt_text. Escreva com qualidade profissional de copywriting, sempre em português do Brasil.';
   return [
     'Você é o assistente editorial da ATOL. Responda exclusivamente JSON válido, sem markdown.',
-    'Não invente métricas, pesquisas ou promessas. Preserve linguagem clara em português do Brasil.',
+    'Todo o conteúdo de texto da resposta deve estar em português do Brasil, nunca em inglês ou outro idioma — isso vale para todas as operações, incluindo PROMPT_IMAGEM.',
+    'Não invente métricas, pesquisas ou promessas.',
     'Operação pedida: ' + operacao + '.',
     instrucaoDeCampos,
     'briefing:',

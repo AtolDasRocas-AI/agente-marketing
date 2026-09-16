@@ -182,6 +182,7 @@ Deno.serve(async (req) => {
 
     const prompt = [
       'Você é o agente de inteligência de produto da ATOL. Analise os dados e proponha UMA hipótese revisável.',
+      'Todo o texto da resposta deve estar em português do Brasil, nunca em inglês ou outro idioma.',
       'Regra inegociável: nunca afirme causalidade. Uma nota de contexto só pode "coincidir com o período", nunca "causar" um resultado.',
       `A confiança já foi calculada pelo sistema como "${confiancaCalculada}", a partir da quantidade de publicações e de semanas de histórico de conta disponíveis — use exatamente esse valor no campo confianca da sua resposta; a sua resposta não decide a confiança, só a explica.`,
       'Ao citar uma publicação específica nas evidências, refira-se por data (ex.: "o post de 12/09") ou pelo link — nunca por um identificador técnico, que não significa nada para quem lê depois.',
