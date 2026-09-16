@@ -225,6 +225,13 @@ export function EstrategiaConteudoMarketing() {
     return url;
   }
 
+  function baixarDataUri(dataUri: string, nome: string) {
+    const link = document.createElement('a');
+    link.href = dataUri;
+    link.download = nome;
+    link.click();
+  }
+
   async function baixarImagem(storagePath: string) {
     const url = await abrirImagem(storagePath);
     if (!url) return;
@@ -514,7 +521,8 @@ export function EstrategiaConteudoMarketing() {
                                     <img
                                       src={composicoesPreview[img.id]}
                                       alt="Prévia da composição com o texto do briefing"
-                                      style={{ maxWidth: '100%', borderRadius: 10 }}
+                                      style={{ maxWidth: '100%', borderRadius: 10, cursor: 'zoom-in' }}
+                                      onClick={() => setImagemExpandida(composicoesPreview[img.id])}
                                     />
                                     <div className="sx-actions" style={{ marginTop: 6 }}>
                                       <button
@@ -524,6 +532,20 @@ export function EstrategiaConteudoMarketing() {
                                         disabled={salvandoComposicao === img.id}
                                       >
                                         {salvandoComposicao === img.id ? 'Salvando…' : 'Salvar composição'}
+                                      </button>
+                                      <button
+                                        className="sx-btn sx-btn--ghost"
+                                        type="button"
+                                        onClick={() => setImagemExpandida(composicoesPreview[img.id])}
+                                      >
+                                        Expandir
+                                      </button>
+                                      <button
+                                        className="sx-btn sx-btn--ghost"
+                                        type="button"
+                                        onClick={() => baixarDataUri(composicoesPreview[img.id], `atol-${formatoImagem.toLowerCase()}-${img.id.slice(0, 8)}.png`)}
+                                      >
+                                        Baixar
                                       </button>
                                       <button
                                         className="sx-btn sx-btn--ghost"
